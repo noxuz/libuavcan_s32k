@@ -1,7 +1,6 @@
 /* NXP Semiconductor copyright 2019 */
-#include "S32K142.h"
-#include "S32K142_features.h"
-#include "FlexCAN_S32K.hpp"
+#include "S32K144.h"
+#include "S32K144_features.h"
 
 #include "libuavcan/media/can.hpp"
 #include "libuavcan/media/interfaces.hpp"
@@ -21,6 +20,12 @@ namespace media
  * MaxRxFrames = 1 (default)
  */
 class S32K_InterfaceGroup : public InterfaceGroup< CAN::Frame< CAN::TypeFD::MaxFrameSizeBytes> >{
+private:
+
+	/* libuavcan constants for S32K driver layer */
+	constexpr std::uint_fast8_t S32K144_CANFD_COUNT = 2u;  /* Number of CAN-FD capable FlexCAN modules  */
+	constexpr std::uint_fast8_t MB_SIZE_WORDS       = 18u; /* Size in words (4 bytes) of the offset between message buffers */
+	constexpr std::size_t		S32K_FILTER_COUNT	= 1u;  /* Number of filters supported by a single UAVCAN node */
 
 public:
 
@@ -29,24 +34,8 @@ public:
 	 */
 	virtual std::uint_fast8_t getInterfaceCount() const override
 	{
-
-		/**
-		 * Initialize array which contains macros from MCU header which tells
-		 * if each FlexCAN instance is capable of CANFD or not
-		 */
-		uint_fast8_t FlexCAN_CANFD_Instances[CAN_INSTANCE_COUNT] = FEATURE_CAN_HAS_FD_ARRAY;
-
-		/* Initialize accumulator variable */
-		uint_fast8_t CANFD_Instances = 0;
-
-		/* Sum through the FlexCAN instances */
-		for(std::uint_fast8_t i = 0; i<CAN_INSTANCE_COUNT ;i++)
-		{
-			CANFD_Instances += FlexCAN_CANFD_Instances[i];
-		}
-
-		/* Return accumulator */
-		return CANFD_Instances;
+		/* Both FlexCAN instances in S32K144 are CAN-FD capable */
+		return S32K144_CANFD_COUNT;
 	}
 
 	virtual libuavcan::Result write(std::uint_fast8_t interface_index,
@@ -60,14 +49,58 @@ public:
 	                                   std::size_t& out_frames_read) override
     {
 
-		/* Possible implementation with mailbonx inactivation */
+
     }
 
-	/* No dynamic subscription of nodes after initialization for the current implementation */
+	/* Reconfigure reception filters for dynamic subscription of nodes */
 	virtual libuavcan::Result reconfigureFilters(const typename FrameType::Filter* filter_config,
 	                                                 std::size_t                   filter_config_length) override
 	{
-		return libuavcan::Result::NotImplemented;
+		/* Initialize return value status */
+		libuavcan::Result Status = libuavcan::Result::Success;
+
+		/* Enter freeze mode for filter reconfiguration */
+		CAN0->MCR |= CAN_MCR_HALT_MASK;
+
+		/* Block for freeze mode entry, halts any transmission or  */
+		if ( isSuccess(Status) )
+		{
+			Status = flagPollTimeout_Set(CAN0->MCR,CAN_MCR_FRZACK_MASK);
+		}
+
+		/* Setup word 0 (4 Bytes) for MB0
+	     * Extended Data Length      (EDL) = 1
+		 * Bit Rate Switch 		     (BRS) = 1
+		 * Error State Indicator     (ESI) = 0
+		 * Message Buffer Code	    (CODE) = 4 ( Active for reception and empty )
+		 * Substitute Remote Request (SRR) = 0
+		 * ID Extended Bit			 (IDE) = 1
+		 * Remote Tx Request	     (RTR) = 0
+		 * Data Length Code			 (DLC) = 0 ( Valid for transmission only )
+		 * Counter Time Stamp (TIME STAMP) = 0 ( Handled by hardware )
+		 */
+		CAN0->RAMn[0] = CAN_RAMn_DATA_BYTE_0(0xC4) |
+						CAN_RAMn_DATA_BYTE_1(0x20);
+
+		/* Setup Message buffer 29-bit extended ID from parameter */
+		CAN0->RAMn[1] = filter_config->id;
+
+		/* Freeze mode exit request */
+		CAN0->MCR &= ~CAN_MCR_HALT_MASK;
+
+		/* Block for freeze mode exit */
+		if ( isSuccess(Status) )
+		{
+		Status = flagPollTimeout_Clear(CAN0->MCR,CAN_MCR_FRZACK_MASK);
+		}
+
+		/* Block until module is ready */
+		if ( isSuccess(Status) )
+		{
+		Status = flagPollTimeout_Clear(CAN0->MCR,CAN_MCR_NOTRDY_MASK);
+		}
+
+		return Status;
 	}
 
 	virtual libuavcan::Result select(libuavcan::duration::Monotonic timeout, bool ignore_write_available) override
@@ -93,107 +126,61 @@ public:
 	                                                  InterfaceGroupPtrType& out_group) override
     {
 		/* Initialize return value status */
-		libuavcan::Result Status;
+		libuavcan::Result Status = libuavcan::Result::Success;
 
 
 		/**
-		 * PLL initialization for 80Mhz SysClock
+		 * SysClock initialization for feeding 80Mhz to FlexCAN
 		 */
 
-		// 8 Mhz Oscillator init
-			/*!
-			 * SOSC Initialization (8 MHz):
-			 * ===================================================
-			 */
-			SCG->SOSCDIV = SCG_SOSCDIV_SOSCDIV1(1)|
-						   SCG_SOSCDIV_SOSCDIV2(1);  	/* SOSCDIV1 & SOSCDIV2 =1: divide by 1 		*/
-			SCG->SOSCCFG  =	SCG_SOSCCFG_RANGE(2)|		/* Range=2: Medium freq (SOSC betw 1MHz-8MHz) 	*/
-							SCG_SOSCCFG_EREFS_MASK;		/* HGO=0:   Config xtal osc for low power 		*/
-		  	  	  	  	  	  	  	  	  	  	  	  	/* EREFS=1: Input is external XTAL 			*/
+		/* System Oscillator (SOSC) initialization for 8Mhz external crystal */
+		SCG->SOSCCSR &= ~SCG_SOSCCSR_LK_MASK;     /* Ensure the register is unlocked */
+		SCG->SOSCCSR &= ~SCG_SOSCCSR_SOSCEN_MASK; /* Disable SOSC for setup */
+		SCG->SOSCCFG  =	 SCG_SOSCCFG_EREFS_MASK | /* Setup external crystal for SOSC reference */
+						 SCG_SOSCCFG_RANGE(2);	  /* Select 8Mhz range */
+		SCG->SOSCCSR  =  SCG_SOSCCSR_SOSCEN_MASK; /* Enable SOSC reference */
+		SCG->SOSCCSR |=  SCG_SOSCCSR_LK_MASK;	  /* Lock the register from accidental writes */
 
-		  while(SCG->SOSCCSR & SCG_SOSCCSR_LK_MASK); 	/* Ensure SOSCCSR unlocked 							*/
-		  SCG->SOSCCSR = SCG_SOSCCSR_SOSCEN_MASK; 		/* LK=0:          SOSCCSR can be written 				*/
-														/* SOSCCMRE=0:    OSC CLK monitor IRQ if enabled 		*/
-														/* SOSCCM=0:      OSC CLK monitor disabled 			*/
-														/* SOSCERCLKEN=0: Sys OSC 3V ERCLK output clk disabled */
-														/* SOSCLPEN=0:    Sys OSC disabled in VLP modes 		*/
-														/* SOSCSTEN=0:    Sys OSC disabled in Stop modes 		*/
-														/* SOSCEN=1:      Enable oscillator 					*/
-
-		while(!(SCG->SOSCCSR & SCG_SOSCCSR_SOSCVLD_MASK));	/* Wait for sys OSC clk valid */
-
-
-		// 160 Mhz PLL init
-			/*!
-			 * SPLL Initialization (160 MHz):
-			 * ===================================================
-			 */
-		  while(SCG->SPLLCSR & SCG_SPLLCSR_LK_MASK); 	/* Ensure SPLLCSR unlocked 				*/
-		  SCG->SPLLCSR &= ~SCG_SPLLCSR_SPLLEN_MASK;  	/* SPLLEN=0: SPLL is disabled (default) 	*/
-
-		  SCG->SPLLDIV |= 	SCG_SPLLDIV_SPLLDIV1(2)|	/* SPLLDIV1 divide by 2 */
-							SCG_SPLLDIV_SPLLDIV2(3);  	/* SPLLDIV2 divide by 4 */
-
-		  SCG->SPLLCFG = SCG_SPLLCFG_MULT(24);			/* PREDIV=0: Divide SOSC_CLK by 0+1=1 		*/
-		  	  	  	  	  	  	  	  	  	  	  		/* MULT=24:  Multiply sys pll by 4+24=40 	*/
-												  		/* SPLL_CLK = 8MHz / 1 * 40 / 2 = 160 MHz 	*/
-
-		  while(SCG->SPLLCSR & SCG_SPLLCSR_LK_MASK); 	/* Ensure SPLLCSR unlocked 						*/
-		  SCG->SPLLCSR |= SCG_SPLLCSR_SPLLEN_MASK; 		/* LK=0:        SPLLCSR can be written 			*/
-		                             	 	 	 		/* SPLLCMRE=0:  SPLL CLK monitor IRQ if enabled 	*/
-		                             	 	 	 	 	/* SPLLCM=0:    SPLL CLK monitor disabled 			*/
-		                             	 	 	 	 	/* SPLLSTEN=0:  SPLL disabled in Stop modes 		*/
-		                             	 	 	 	 	/* SPLLEN=1:    Enable SPLL 						*/
-
-		  while(!(SCG->SPLLCSR & SCG_SPLLCSR_SPLLVLD_MASK)); /* Wait for SPLL valid */
-
-
-		// Normal run mode 80Mhz
-		/*! Slow IRC is enabled with high range (8 MHz) in reset.
-		 *	Enable SIRCDIV2_CLK and SIRCDIV1_CLK, divide by 1 = 8MHz
-		 *  asynchronous clock source.
-		 * ==========================================
-		*/
-			SCG->SIRCDIV = SCG_SIRCDIV_SIRCDIV1(1)
-						 | SCG_SIRCDIV_SIRCDIV2(1);
-
-		/*!
-		 *  Change to normal RUN mode with 8MHz SOSC, 80 MHz PLL:
-		 *  ====================================================
-		 */
-		  SCG->RCCR=SCG_RCCR_SCS(6)      /* Select PLL as clock source 								*/
-		    |SCG_RCCR_DIVCORE(0b01)      /* DIVCORE=1, div. by 2: Core clock = 160/2 MHz = 80 MHz 		*/
-		    |SCG_RCCR_DIVBUS(0b01)       /* DIVBUS=1, div. by 2: bus clock = 40 MHz 					*/
-		    |SCG_RCCR_DIVSLOW(0b10);     /* DIVSLOW=2, div. by 2: SCG slow, flash clock= 26 2/3 MHz	*/
-
-		  while (((SCG->CSR & SCG_CSR_SCS_MASK) >> SCG_CSR_SCS_SHIFT ) != 6) {}	/* Wait for sys clk src = SPLL */
-
-
-
-
-		/**
-		 * FlexCAN0 initialization with ISO CAN-FD
-		 *
-		 * 16 default message buffers (MB's)
-		 * Undivided FIRC at 48Mhz as default clock source for the module
-		 */
-
-		/* Check for existence of ISO CAN-FD feature in MCU */
-		if (SIM->SDID & SIM_SDID_FEATURES(40))
+		if ( isSuccess(Status) )
 		{
+			Status = flagPollTimeout_Set(SCG->SOSCCSR,SCG_SOSCCSR_SOSCVLD_MASK);	/* Poll for valid SOSC reference, needs 4096 cycles*/
+		}
 
-		/* Choosing which instance to init yet to be implemented */
+		/* System PLL (SPLL) initialization for to 160Mhz reference */
+		SCG->SPLLCSR &= ~SCG_SPLLCSR_LK_MASK;     /* Ensure the register is unlocked */
+		SCG->SPLLCSR &= ~SCG_SPLLCSR_SPLLEN_MASK; /* Disable PLL for setup */
+		SCG->SPLLCFG  =  SCG_SPLLCFG_MULT(24);	  /* Select multiply factor of 40 for 160Mhz SPLL_CLK */
+		SCG->SPLLCSR |=  SCG_SPLLCSR_SPLLEN_MASK; /* Enable PLL */
+		SCG->SPLLCSR |=  SCG_SPLLCSR_LK_MASK;     /* Lock register from accidental writes */
 
+		if ( isSuccess(Status) )
+		{
+		Status = flagPollTimeout_Set(SCG->SPLLCSR,SCG_SPLLCSR_SPLLVLD_MASK); /* Poll for valid SPLL reference */
+		}
+
+		/* Normal RUN configuration for output clocks */
+		SCG->RCCR    |=  SCG_RCCR_SCS(6)     |    /* Select SPLL as system clock source */
+					 	 SCG_RCCR_DIVCORE(1) |	  /* Additional dividers for Normal Run mode */
+						 SCG_RCCR_DIVBUS(1)  |
+						 SCG_RCCR_DIVSLOW(2);
+
+		/**
+		 * FlexCAN instances initialization
+		 */
 		PCC->PCCn[PCC_FlexCAN0_INDEX] = PCC_PCCn_CGC_MASK; /* FlexCAN0 clock gating */
 		CAN0->MCR   |=  CAN_MCR_MDIS_MASK;				   /* Disable FlexCAN0 module for clock source selection */
 		CAN0->CTRL1 |=  CAN_CTRL1_CLKSRC_MASK;			   /* Select peripheral clock source (undivided FIRC at 48Mhz)*/
 		CAN0->MCR 	&= ~CAN_MCR_MDIS_MASK;				   /* Enable FlexCAN0 and automatic transition to freeze mode for setup */
 
 		/* Block for freeze mode entry */
+		if ( isSuccess(Status) )
+		{
 		Status = flagPollTimeout_Set(CAN0->MCR,CAN_MCR_FRZACK_MASK);
+		}
 
 		/* Next configurations are only permitted in freeze mode */
-		CAN0->MCR	|= CAN_MCR_FDEN_MASK; 		  /* Habilitate CANFD feature and leave default 16 MB's */
+		CAN0->MCR	|= CAN_MCR_FDEN_MASK  | 	  /* Habilitate CANFD feature and leave default 16 MB's */
+					   CAN_MCR_FRZ_MASK;		  /* Enable freeze mode entry when HALT bit is asserted */
 		CAN0->CTRL2 |= CAN_CTRL2_ISOCANFDEN_MASK; /* Activate ISO CAN-FD operation*/
 
 		/* CAN Bit Timing (CBT) configuration for a nominal phase of 1 Mbit/s with 24 time quantas,
@@ -218,30 +205,69 @@ public:
 					   CAN_FDCBT_FPSEG2(4)   |  /* Phase buffer segment 2 of 5 time quantas */
 					   CAN_FDCBT_FRJW(4);       /* Resynchorinzation jump width same as PSEG2 */
 
-		/* FDCTRL and rest */
+		/* Additional CAN-FD configurations */
+		CAN0->FDCTRL |= CAN_FDCTRL_FDRATE_MASK | /* Enable bit rate switch in data phase of frame */
+						CAN_FDCTRL_TDCEN_MASK  | /* Enable transceiver delay compensation */
+						CAN_FDCTRL_TDCOFF(5)   | /* Setup 5 FlexCAN clock cycles for delay compensation in data phase sampling */
+						CAN_FDCTRL_MBDSR0(3);    /* Setup 64 bytes per message buffer for a maximum of 7 MB's */
+
+		/* Message buffers are located in a dedicated RAM inside FlexCAN, they aren't affected by reset,
+		 * so they must be explicitly initialized, they total 128 slots of 4 words each, which sum to 512 bytes,
+		 * each MB is 72 byte in size ( 64 payload and 8 for headers )
+		 */
+		for(int i = 0; i<128; i++ )
+		{
+			CAN0->RAMn[i] = 0;
+		}
+
+		/* Setup maximum number of message buffers as 2, 0th for reception and 1th for transmission
+		 * excludes MB's 3th-7th from the arbitration process */
+		CAN0->MCR |= CAN_MCR_MAXMB(1) |
+					 CAN_MCR_SRXDIS_MASK; /* Disable self-reception of frames if ID matches */
 
 
+		/* Setup Message buffer 0 for reception */
+		CAN0->MCR |= CAN_MCR_IRMQ_MASK; /* Enable individual message buffer masking */
+		CAN0->RXIMR[0] = filter_config->mask; /* Setup MB0 reception mask from argument */
+
+		/* Setup word 0 (4 Bytes) for MB0
+		 * Extended Data Length      (EDL) = 1
+		 * Bit Rate Switch 		     (BRS) = 1
+		 * Error State Indicator     (ESI) = 0
+		 * Message Buffer Code	    (CODE) = 4 ( Active for reception and empty )
+		 * Substitute Remote Request (SRR) = 0
+		 * ID Extended Bit			 (IDE) = 1
+		 * Remote Tx Request	     (RTR) = 0
+		 * Data Length Code			 (DLC) = 0 ( Valid for transmission only )
+		 * Counter Time Stamp (TIME STAMP) = 0 ( Handled by hardware )
+		 */
+		CAN0->RAMn[0] = CAN_RAMn_DATA_BYTE_0(0xC4) |
+					    CAN_RAMn_DATA_BYTE_1(0x20);
+
+		/* Setup Message buffer 29-bit extended ID from parameter */
+		CAN0->RAMn[1] = filter_config->id;
 
 		/* Exit from freeze mode */
 		CAN->MCR &= ~CAN_MCR_HALT_MASK;
 
 		/* Block for freeze mode exit */
+		if ( isSuccess(Status) )
+		{
 		Status = flagPollTimeout_Clear(CAN0->MCR,CAN_MCR_FRZACK_MASK);
+		}
 
 		/* Block until module is ready */
+		if ( isSuccess(Status) )
+		{
 		Status = flagPollTimeout_Clear(CAN0->MCR,CAN_MCR_NOTRDY_MASK);
-
 		}
+
 
 		/**
 		 * eDMA module initialization:
 		 * Uses Transfer Control Diagram instance 0 (TCD0) for
-		 * 2 minor loop data transfers bursts of 32 bytes each
-		 * which is the maximum data transfer size possible
+		 * 1 minor loop data transfers burst of 64 bytes
 		 */
-
-		/* Initialize a DMA channel for each CANFD instance yet to be implemented */
-
 		SIM->PLATCGC	|= SIM_PLATCGC_CGCDMA_MASK; /* DMA Clock gating */
 
 		DMA->CR			&= ~DMA_CR_CX_MASK;			/* DMA module in normal operation */
@@ -251,23 +277,20 @@ public:
 
 		/* eDMA source and destination addresses setup */
 		DMA->TCD[0].SADDR = DMA_TCD_SADDR_SADDR(0); /* Source address (CAN message buffer address) */
-		DMA->TCD[0].SOFF  = DMA_TCD_SOFF_SOFF(32);  /* Source address offset for each minor loop (32 bytes)*/
+		DMA->TCD[0].SOFF  = DMA_TCD_SOFF_SOFF(64);  /* Source address offset for each minor loop (64 bytes)*/
 
 		DMA->TCD[0].DADDR = DMA_TCD_DADDR_DADDR(0); /* Destination address */
-		DMA->TCD[0].DOFF  = DMA_TCD_DOFF_DOFF(32);  /* Destination address offset for each minor loop (32 bytes) */
+		DMA->TCD[0].DOFF  = DMA_TCD_DOFF_DOFF(64);  /* Destination address offset for each minor loop (64 bytes) */
 
-        /* eDMA data size configuration for 2 burst of 32 bytes */
-		DMA->TCD[0].ATTR  = DMA_TCD_ATTR_SSIZE(5) | /* Data size in source (32 bytes) */
-							DMA_TCD_ATTR_DSIZE(5);  /* Data size in destination (32 bytes) */
+        /* eDMA data size configuration for 1 burst of 64 bytes, handled by eDMA as 2 bursts of 32 bytes each */
+		DMA->TCD[0].ATTR  = DMA_TCD_ATTR_SSIZE(5) | /* Data size burst in source (32 bytes) */
+							DMA_TCD_ATTR_DSIZE(5);  /* Data size burst in destination (32 bytes) */
 
 		/* eDMA minor and major loop configuration */
-		DMA->TCD[0].NBYTES.MLNO   = DMA_TCD_NBYTES_MLNO_NBYTES(32); /* 32-byte transfer for each minor loop data burst */
+		DMA->TCD[0].NBYTES.MLNO   = DMA_TCD_NBYTES_MLNO_NBYTES(64); /* 32-byte transfer for each minor loop data burst */
 		DMA->TCD[0].SLAST		  = DMA_TCD_SLAST_SLAST(-64);		/* 64-byte source address adjustment at each major loop */
-		DMA->TCD[0].BITER.ELINKNO = DMA_TCD_BITER_ELINKNO(2);       /* Minor loop reload counter for each major loop */
-		DMA->TCD[0].CITER.ELINKNO = DMA_TCD_CITER_ELINKNO(2);       /* Minor loop current counter value, must coincide with previous BITER */
-
-		/* If reached end of function, status is successful */
-		Status = libuavcan::Result::Success;
+		DMA->TCD[0].BITER.ELINKNO = DMA_TCD_BITER_ELINKNO(1);       /* Minor loop reload counter for each major loop */
+		DMA->TCD[0].CITER.ELINKNO = DMA_TCD_CITER_ELINKNO(1);       /* Minor loop current counter value, must coincide with previous BITER */
 
 		/* Return code for start of S32K_InterfaceGroup */
 		return Status;
@@ -279,29 +302,27 @@ public:
 	virtual libuavcan::Result stopInterfaceGroup(InterfaceGroupPtrType& inout_group) override
 	{
 		/* Default return value status */
-		libuavcan::Result Status = libuavcan::Result::Failure;
-
+		libuavcan::Result Status = libuavcan::Result::Success;
 
 		/* DMA module deinitialization */
-		DMA->CR 		|= DMA_CR_CX_MASK; /* Force the minor loop to finish and cancels the remaining data transfer */
+		DMA->CR 		|= DMA_CR_CX_MASK; 			/* Force the minor loop to finish and cancels the remaining data transfer */
 		SIM->PLATCGC	&= SIM_PLATCGC_CGCDMA_MASK; /* Disable clock for DMA module */
 
 		/* FlexCAN0 module deinitialization */
-		/* Possible abortion of pending transmissions before clock gating */
-		PCC->PCCn[PCC_FlexCAN0_INDEX] &= ~PCC_PCCn_CGC_MASK; /* Disable FlexCAN0 clock gating */
-
-
-		/* If reached end of function, status is successful */
-		Status = libuavcan::Result::Success;
+		CAN0->MCR 	    |= CAN_MCR_MDIS_MASK;				         /* Disable FlexCAN0 module */
+		Status = flagPollTimeout_Set(CAN0->MCR,CAN_MCR_LPMACK_MASK); /* Poll for Low Power ACK, waits for current transmission/reception to finish */
+		PCC->PCCn[PCC_FlexCAN0_INDEX] &= ~PCC_PCCn_CGC_MASK; 		 /* Disable FlexCAN0 clock gating */
 
 		/* Return code for a successful stop of S32K_InterfaceGroup */
 		return Status;
 	}
 
-	/* Only one filter for the Message Buffers */
+	/* A single UAVCAN node is configured for having a single ID for
+	 * transmission and reception of frames
+	 */
 	virtual std::size_t getMaxFrameFilters() const override
 	{
-		return 1u;
+		return S32K_FILTER_COUNT;
 	}
 
 
@@ -344,7 +365,7 @@ public:
 
 		/* If this section is reached, means timeout ocurred
 		 * and return error status is returned */
-		return libuavcan::Result::Error;
+		return libuavcan::Result::Failure;
 	}
 
 
@@ -386,7 +407,7 @@ public:
 
 		/* If this section is reached, means timeout ocurred
 		 * and return error status is returned */
-		return libuavcan::Result::Error;
+		return libuavcan::Result::Failure;
 	}
 
 
