@@ -57,7 +57,7 @@ private:
 	/* libuavcan constants for S32K driver layer */
 	constexpr std::uint_fast8_t S32K146_CANFD_COUNT = 2u;  /* Number of CAN-FD capable FlexCAN modules  */
 	constexpr std::uint_fast8_t MB_SIZE_WORDS       = 18u; /* Size in words (4 bytes) of the offset between message buffers */
-	constexpr std::size_t		S32K_FILTER_COUNT	= 1u;  /* Number of filters supported by a single UAVCAN node */
+	constexpr std::size_t		S32K_FILTER_COUNT	= 5u;  /* Number of filters supported by a single FlexCAN instace */
 
 public:
 
@@ -176,9 +176,16 @@ public:
 	                                                  std::size_t            filter_config_length,
 	                                                  InterfaceGroupPtrType& out_group) override
     {
+
 		/* Initialize return values */
 		libuavcan::Result Status = libuavcan::Result::Success;
 		out_group = nullptr;
+
+		/* Input validation */
+		if( filter_config_length > S32K_FILTER_COUNT )
+		{
+			Status = libuavcan::Result::BadArgument;
+		}
 
 		/**
 		 * SysClock initialization for feeding 80Mhz to FlexCAN
@@ -266,37 +273,39 @@ public:
 		 * so they must be explicitly initialized, they total 128 slots of 4 words each, which sum to 512 bytes,
 		 * each MB is 72 byte in size ( 64 payload and 8 for headers )
 		 */
-		for(int i = 0; i<128; i++ )
+		for(std::uint_fast8_t i = 0; i<CAN_RAMn_COUNT; i++ )
 		{
 			CAN0->RAMn[i] = 0;
 		}
 
-		/* Setup maximum number of message buffers as 2, 0th for reception and 1th for transmission
-		 * excludes MB's 3th-7th from the arbitration process */
-		CAN0->MCR |= CAN_MCR_MAXMB(1) |
-					 CAN_MCR_SRXDIS_MASK; /* Disable self-reception of frames if ID matches */
+		/* Setup maximum number of message buffers as 7, 0th and 1st for transmission and 2nd-7th for reception */
+		CAN0->MCR |= CAN_MCR_MAXMB(6)    |
+					 CAN_MCR_SRXDIS_MASK | /* Disable self-reception of frames if ID matches */
+					 CAN_MCR_IRMQ_MASK;	   /* Enable individual message buffer masking */
 
+		/* Setup Message buffers 2-7 for reception and set filters */
+		for( std::uint_fast8_t i = 0; i < filter_config_length; i++ )
+		{
+			/* Setup reception MB's mask from input argument */
+			CAN0->RXIMR[i+2] = filter_config[i]->mask;
 
-		/* Setup Message buffer 0 for reception */
-		CAN0->MCR |= CAN_MCR_IRMQ_MASK; /* Enable individual message buffer masking */
-		CAN0->RXIMR[0] = filter_config->mask; /* Setup MB0 reception mask from argument */
+			/* Setup word 0 (4 Bytes) for MB0
+			 * Extended Data Length      (EDL) = 1
+			 * Bit Rate Switch 		     (BRS) = 1
+			 * Error State Indicator     (ESI) = 0
+			 * Message Buffer Code	    (CODE) = 4 ( Active for reception and empty )
+			 * Substitute Remote Request (SRR) = 0
+			 * ID Extended Bit			 (IDE) = 1
+			 * Remote Tx Request	     (RTR) = 0
+			 * Data Length Code			 (DLC) = 0 ( Valid for transmission only )
+			 * Counter Time Stamp (TIME STAMP) = 0 ( Handled by hardware )
+			 */
+			CAN0->RAMn[(i+2)*MB_SIZE_WORDS] = CAN_RAMn_DATA_BYTE_0(0xC4) |
+											  CAN_RAMn_DATA_BYTE_1(0x20);
 
-		/* Setup word 0 (4 Bytes) for MB0
-		 * Extended Data Length      (EDL) = 1
-		 * Bit Rate Switch 		     (BRS) = 1
-		 * Error State Indicator     (ESI) = 0
-		 * Message Buffer Code	    (CODE) = 4 ( Active for reception and empty )
-		 * Substitute Remote Request (SRR) = 0
-		 * ID Extended Bit			 (IDE) = 1
-		 * Remote Tx Request	     (RTR) = 0
-		 * Data Length Code			 (DLC) = 0 ( Valid for transmission only )
-		 * Counter Time Stamp (TIME STAMP) = 0 ( Handled by hardware )
-		 */
-		CAN0->RAMn[0] = CAN_RAMn_DATA_BYTE_0(0xC4) |
-					    CAN_RAMn_DATA_BYTE_1(0x20);
-
-		/* Setup Message buffer 29-bit extended ID from parameter */
-		CAN0->RAMn[1] = filter_config->id;
+			/* Setup Message buffers 2-7 29-bit extended ID from parameter */
+			CAN0->RAMn[(i+2)*MB_SIZE_WORDS + 1] = filter_config[i]->id;
+		}
 
 		/* Exit from freeze mode */
 		CAN->MCR &= ~CAN_MCR_HALT_MASK;
@@ -313,36 +322,6 @@ public:
 		Status = flagPollTimeout_Clear(CAN0->MCR,CAN_MCR_NOTRDY_MASK);
 		}
 
-
-		/**
-		 * eDMA module initialization:
-		 * Uses Transfer Control Diagram instance 0 (TCD0) for
-		 * 1 minor loop data transfers burst of 64 bytes
-		 */
-		SIM->PLATCGC	|= SIM_PLATCGC_CGCDMA_MASK; /* DMA Clock gating */
-
-		DMA->CR			&= ~DMA_CR_CX_MASK;			/* DMA module in normal operation */
-		DMA->TCD[0].CSR &= ~DMA_TCD_CSR_START_MASK; /* Disable channel for configuration */
-		DMA->TCD[0].CSR |=  DMA_TCD_CSR_DREQ(1);    /* Enable automatic request flag clear by hardware in each major loop */
-
-
-		/* eDMA source and destination addresses setup */
-		DMA->TCD[0].SADDR = DMA_TCD_SADDR_SADDR(0); /* Source address (CAN message buffer address) */
-		DMA->TCD[0].SOFF  = DMA_TCD_SOFF_SOFF(1);   /* Source address offset for internal transfer (1 bytes)*/
-
-		DMA->TCD[0].DADDR = DMA_TCD_DADDR_DADDR(0); /* Destination address */
-		DMA->TCD[0].DOFF  = DMA_TCD_DOFF_DOFF(1);   /* Destination address offset for each internal transfer (1 bytes) */
-
-        /* eDMA data size configuration for 1 burst of 64 bytes, handled by eDMA as 64 bursts of a single byte */
-		DMA->TCD[0].ATTR  = DMA_TCD_ATTR_SSIZE(0) | /* Data size burst in source (1 byte) */
-							DMA_TCD_ATTR_DSIZE(0);  /* Data size burst in destination (1 byte) */
-
-		/* eDMA minor and major loop configuration */
-		DMA->TCD[0].NBYTES.MLNO   = DMA_TCD_NBYTES_MLNO_NBYTES(64); /* eDMA counts up to 64 bytes transferred for each minor loop (16 internal transfers) */
-		DMA->TCD[0].SLAST		  = DMA_TCD_SLAST_SLAST(-64);		/* 64-byte source address adjustment at each major loop */
-		DMA->TCD[0].BITER.ELINKNO = DMA_TCD_BITER_ELINKNO(1);       /* Minor loop reload counter for each major loop, each major loop consists of 1 minor loop */
-		DMA->TCD[0].CITER.ELINKNO = DMA_TCD_CITER_ELINKNO(1);       /* Minor loop current counter value, must coincide with previous BITER */
-
 		/* If function ended successfully, set pointer to this base class address */
 		out_group = static_cast<InterfaceGroupPtrType>(this);
 
@@ -357,10 +336,6 @@ public:
 	{
 		/* Default return value status */
 		libuavcan::Result Status = libuavcan::Result::Success;
-
-		/* DMA module deinitialization */
-		DMA->CR 		|= DMA_CR_CX_MASK; 			/* Force the minor loop to finish and cancels the remaining data transfer */
-		SIM->PLATCGC	&= SIM_PLATCGC_CGCDMA_MASK; /* Disable clock for DMA module */
 
 		/* FlexCAN0 module deinitialization */
 		CAN0->MCR 	    |= CAN_MCR_MDIS_MASK;				         /* Disable FlexCAN0 module */
@@ -466,7 +441,6 @@ public:
 		 * and return error status is returned */
 		return libuavcan::Result::Failure;
 	}
-
 
 
 };
