@@ -1,2 +1,2 @@
-# libuavcan_s32k
-Libuavcan driver for NXP S32K family
+# S32K_libuavcan
+Libuavcan driver for NXP S32K146 MCU
