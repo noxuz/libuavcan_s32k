@@ -237,9 +237,9 @@ public:
 		}
 
 		/* Next configurations are only permitted in freeze mode */
-		CAN0->MCR	|= CAN_MCR_FDEN_MASK  | 	  /* Habilitate CANFD feature and leave default 16 MB's */
+		CAN0->MCR	|= CAN_MCR_FDEN_MASK  | 	  /* Habilitate CANFD feature */
 					   CAN_MCR_FRZ_MASK;		  /* Enable freeze mode entry when HALT bit is asserted */
-		CAN0->CTRL2 |= CAN_CTRL2_ISOCANFDEN_MASK; /* Activate ISO CAN-FD operation*/
+		CAN0->CTRL2 |= CAN_CTRL2_ISOCANFDEN_MASK; /* Activate the use of ISO 11898-1 CAN-FD standard */
 
 		/* CAN Bit Timing (CBT) configuration for a nominal phase of 1 Mbit/s with 24 time quantas,
 		   in accordance with Bosch 2012 specification, sample point at 70.8% */
@@ -306,6 +306,14 @@ public:
 			/* Setup Message buffers 2-7 29-bit extended ID from parameter */
 			CAN0->RAMn[(i+2)*MB_SIZE_WORDS + 1] = filter_config[i]->id;
 		}
+
+		/* Enable interrupt in NVIC for FlexCAN0 reception with default priority (ID = 81) */
+		S32_NVIC->ISER[2] = 0x20000;
+		//S32_NVIC->ISER[2] = 0x1000000; // FLEXCAN1 ID = 88
+
+	    /* Enable interrupts of reception MB's (0b1111100) */
+		CAN0->IMASK1 = CAN_IMASK1_BUF31TO0M(124);
+
 
 		/* Exit from freeze mode */
 		CAN->MCR &= ~CAN_MCR_HALT_MASK;
@@ -447,5 +455,15 @@ public:
 
 } /* END namespace media */
 } /* END namespace libuavcan */
+
+/* ISR for FlexCAN0 successful reception */
+void CAN0_ORed_0_15_MB_IRQHandler(void)
+{
+
+	/* Check which MB caused the interrupt */
+
+	/* Clear flag (w1c) */
+
+}
 
 #endif
