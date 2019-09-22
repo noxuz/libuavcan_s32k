@@ -196,6 +196,7 @@ public:
 		SCG->SOSCCSR &= ~SCG_SOSCCSR_SOSCEN_MASK; /* Disable SOSC for setup */
 		SCG->SOSCCFG  =	 SCG_SOSCCFG_EREFS_MASK | /* Setup external crystal for SOSC reference */
 						 SCG_SOSCCFG_RANGE(2);	  /* Select 8Mhz range */
+		SCG->SOSCDIV |=  SCG_SOSCDIV_SOSCDIV2(4); /* Divider of 8 for LPIT clock source, gets 1Mhz reference */
 		SCG->SOSCCSR  =  SCG_SOSCCSR_SOSCEN_MASK; /* Enable SOSC reference */
 		SCG->SOSCCSR |=  SCG_SOSCCSR_LK_MASK;	  /* Lock the register from accidental writes */
 
@@ -221,6 +222,36 @@ public:
 					 	 SCG_RCCR_DIVCORE(1) |	  /* Additional dividers for Normal Run mode */
 						 SCG_RCCR_DIVBUS(1)  |
 						 SCG_RCCR_DIVSLOW(2);
+
+		/**
+		 * CAN frames timestamping 64-bit timer initialization
+		 * using chained LPIT channel 0 and 1
+		 */
+
+	    PCC->PCCn[PCC_LPIT_INDEX] |= PCC_PCCn_PCS(1); /* Clock source option 1: (SOSCDIV2) at 1Mhz */
+		PCC->PCCn[PCC_LPIT_INDEX] |= PCC_PCCn_CGC(1); /* Clock gating to LPIT module */
+		LPIT0->MCR |= LPIT_MCR_M_CEN(1); 			  /* Enable module */
+
+		/* Select 32-bit periodic Timer for both chanied channels (default)  */
+		LPIT0->TMR[0].TCTRL |= LPIT_TMR_TCTRL_MODE(0);
+		LPIT0->TMR[1].TCTRL |= LPIT_TMR_TCTRL_MODE(0);
+
+		/* Select chain mode for channel 1, this becomes the most significant 32 bits */
+		LPIT0->TMR[1].TCTRL |= LPIT_TMR_TCTRL_CHAIN(1);
+
+		/* Setup max reload value for both channels 0xFFFFFFFF */
+	    LPIT0->TMR[0].TVAL = LPIT_TMR_TVAL_TMR_VAL_MASK;
+	    LPIT0->TMR[1].TVAL = LPIT_TMR_TVAL_TMR_VAL_MASK;
+
+		/* Start the timers */
+		LPIT0->SETTEN |= LPIT_SETTEN_SET_T_EN_0(1) |
+						 LPIT_SETTEN_SET_T_EN_1(1);
+
+		/* Verify that the least significant 32-bit timer is counting (not locked at 0) */
+		if ( isSuccess(Status) )
+		{
+			Status = flagPollTimeoutSet(LPIT0->TMR[0],LPIT_TMR_TVAL_TMR_VAL_MASK);
+		}
 
 		/**
 		 * FlexCAN instances initialization
@@ -463,6 +494,9 @@ void CAN0_ORed_0_15_MB_IRQHandler(void)
 	/* Check which MB caused the interrupt */
 
 	/* Clear flag (w1c) */
+
+	/* timestamp the frame */
+	// uint64_t timestamp = ( (  0xFFFFFFFF - LPIT0->TMR[1].CVAL ) << 32)  + (  0xFFFFFFFF - LPIT0->TMR[0].CVAL );
 
 }
 
