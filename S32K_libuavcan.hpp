@@ -534,6 +534,9 @@ public:
 void CAN0_ORed_0_15_MB_IRQHandler(void)
 {
 
+	/* Before anything, get a timestamp  */
+	uint64_t timestamp =  (uint64_t)( ( (uint64_t)(0xFFFFFFFF - LPIT0->TMR[1].CVAL) << 32)  | (  0xFFFFFFFF - LPIT0->TMR[0].CVAL ));
+
 	/* Initialize variable for finding which MB received */
 	std::uint8_t MB_index = 0;
 
@@ -559,8 +562,6 @@ void CAN0_ORed_0_15_MB_IRQHandler(void)
 		/* Increase frame count */
 		RX_ISRframeCount++;
 
-		/* timestamp the frame */
-		// uint64_t timestamp = ( (  0xFFFFFFFF - LPIT0->TMR[1].CVAL ) << 32)  + (  0xFFFFFFFF - LPIT0->TMR[0].CVAL );
 
 		/* S32K_InterfaceManager::frame_ISRbuffer.push_front() */
 	}
