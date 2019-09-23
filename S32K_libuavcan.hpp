@@ -42,6 +42,14 @@ namespace libuavcan
 {
 namespace media
 {
+
+/* Maximun capacity of frames capacity */
+static constexpr std::uint32_t Frame_Capactiy = 500;
+/* Intermediate buffer for ISR frame reception */
+static volatile CAN::Frame CAN_ISRbuffer[Frame_Capactiy];
+/* Counter for number of frames received */
+static volatile std::fast8_t RX_ISRframeCount = 0;
+
 /**
  * S32K CanFD driver layer InterfaceGroup
  * Class instantiation with the next template parameters:
@@ -491,12 +499,35 @@ public:
 void CAN0_ORed_0_15_MB_IRQHandler(void)
 {
 
+	/* Initialize variable for finding which MB received */
+	std::uint8_t MB_index = 0;
+
 	/* Check which MB caused the interrupt */
+	switch( CAN0->IFLAG1 )
+		case 0x4:
+			MB_index = 2;
+		case 0x8:
+			MB_index = 3;
+		case 0x10:
+			MB_index = 4;
+		case 0x20:
+			MB_index = 5;
+		case 0x40:
+			MB_index = 6;
 
-	/* Clear flag (w1c) */
+	/* Clear MB interrupt flag (write 1 to clear)*/
+	CAN0->IFLAG1 |= (1<<MB_index);
 
-	/* timestamp the frame */
-	// uint64_t timestamp = ( (  0xFFFFFFFF - LPIT0->TMR[1].CVAL ) << 32)  + (  0xFFFFFFFF - LPIT0->TMR[0].CVAL );
+	/* Receive a frame only if the buffer its under its capacity */
+	if (RX_ISRframeCount <= Frame_Capactiy )
+	{
+		/* Increase frame count */
+		RX_ISRframeCount++;
+
+		/* timestamp the frame */
+		// uint64_t timestamp = ( (  0xFFFFFFFF - LPIT0->TMR[1].CVAL ) << 32)  + (  0xFFFFFFFF - LPIT0->TMR[0].CVAL );
+
+	}
 
 }
 
