@@ -32,21 +32,24 @@
 #ifndef S32K_LIBUAVCAN_HPP_INCLUDED
 #define S32K_LIBUAVCAN_HPP_INCLUDED
 
+/* S32K146 header file */
 #include "S32K146.h"
 
+/* libuavcan core header files */
 #include "libuavcan/media/can.hpp"
 #include "libuavcan/media/interfaces.hpp"
 
+/* STL queue for the intermediate ISR buffer */
+#include <deque>
 
 namespace libuavcan
 {
 namespace media
 {
 
-/* Maximun capacity of frames capacity */
-static constexpr std::uint32_t Frame_Capactiy = 500;
-/* Intermediate buffer for ISR frame reception */
-static volatile CAN::Frame CAN_ISRbuffer[Frame_Capactiy];
+/* Maximun capacity of intermediate frames */
+static constexpr std::uint32_t Frame_Capactiy = 500u;
+
 /* Counter for number of frames received */
 static volatile std::fast8_t RX_ISRframeCount = 0;
 
@@ -107,6 +110,7 @@ public:
 	                                   std::size_t& out_frames_read) override
     {
 
+		/* frame_ISRbuffer.pop_back() */
 
     }
 
@@ -369,6 +373,9 @@ public:
 		Status = flagPollTimeout_Clear(CAN0->MCR,CAN_MCR_NOTRDY_MASK);
 		}
 
+		/* Initialize intermediate RX buffer for ISR reception */
+		static std::deque<CAN::Frame> frame_ISRbuffer;
+
 		/* If function ended successfully, set pointer to this base class address */
 		out_group = static_cast<InterfaceGroupPtrType>(this);
 
@@ -527,6 +534,7 @@ void CAN0_ORed_0_15_MB_IRQHandler(void)
 		/* timestamp the frame */
 		// uint64_t timestamp = ( (  0xFFFFFFFF - LPIT0->TMR[1].CVAL ) << 32)  + (  0xFFFFFFFF - LPIT0->TMR[0].CVAL );
 
+		/* S32K_InterfaceManager::frame_ISRbuffer.push_front() */
 	}
 
 }
