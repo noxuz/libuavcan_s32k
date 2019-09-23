@@ -200,6 +200,18 @@ public:
 		}
 
 		/**
+		 * LPIT0 channel initialization for timeout timer
+		 */
+		PCC->PCCn[PCC_LPIT_INDEX] |= PCC_PCCn_CGC(1); /* Clock gating to LPIT module */
+		SCG->SIRCDIV |= SCG_SIRCDIV2(4) 			  /* Enable and divide by 8, 1Mhz */
+		PCC->PCCn[PCC_LPIT_INDEX] |= PCC_PCCn_PCS(2); /* Enable and select SIRCDIV2_CLK (8Mhz) */
+		LPIT0->MCR |= LPIT_MCR_M_CEN(1); 			  /* Enable module for setup */
+
+		/* Select 32-bit peridic timer mode (default) */
+		LPIT0->TMR[3].TCTRL |= LPIT_TMR_TCTRL_MODE(0);
+
+
+		/**
 		 * SysClock initialization for feeding 80Mhz to FlexCAN
 		 */
 
@@ -240,11 +252,12 @@ public:
 		 * using chained LPIT channel 0 and 1
 		 */
 
-	    PCC->PCCn[PCC_LPIT_INDEX] |= PCC_PCCn_PCS(1); /* Clock source option 1: (SOSCDIV2) at 1Mhz */
-		PCC->PCCn[PCC_LPIT_INDEX] |= PCC_PCCn_CGC(1); /* Clock gating to LPIT module */
+		LPIT0->MCR &= ~LPIT_MCR_M_CEN_MASK;			  /* Disable module for setup */
+		/* Clock source option 1: (SOSCDIV2) at 1Mhz clearing previous bit configuration */
+		PCC->PCCn[PCC_LPIT_INDEX] = ( PCC->PCCn[PCC_LPIT_INDEX] & ~PCC_PCCn_PCS_MASK ) | PCC_PCCn_PCS(1);
 		LPIT0->MCR |= LPIT_MCR_M_CEN(1); 			  /* Enable module */
 
-		/* Select 32-bit periodic Timer for both chanied channels (default)  */
+		/* Select 32-bit periodic Timer for both chained channels (default)  */
 		LPIT0->TMR[0].TCTRL |= LPIT_TMR_TCTRL_MODE(0);
 		LPIT0->TMR[1].TCTRL |= LPIT_TMR_TCTRL_MODE(0);
 
@@ -332,7 +345,7 @@ public:
 			/* Setup reception MB's mask from input argument */
 			CAN0->RXIMR[i+2] = filter_config[i]->mask;
 
-			/* Setup word 0 (4 Bytes) for MB0
+			/* Setup word 0 (4 Bytes) for ith MB
 			 * Extended Data Length      (EDL) = 1
 			 * Bit Rate Switch 		     (BRS) = 1
 			 * Error State Indicator     (ESI) = 0
@@ -422,18 +435,17 @@ public:
 	 */
 	libuavcan::Result flagPollTimeout_Set(volatile uint32_t &flagRegister, uint32_t flag_Mask) const
 	{
-		/* Tuning parameter for the number of cpu clock cycles to block for the flag */
-		constexpr uint32_t cycles_timeout = S32_SysTick_RVR_RELOAD_MASK; /* Max value = 0xFFFFFF due to 24 bit SysTick which is approx 0.3 seconds */
-		volatile  uint32_t delta          = 0; 						   	 /* Declaration of delta for comparision */
+		constexpr uint32_t cycles_timeout = 0xFFFFF; /* Timeout of 1/(1Mhz) * 2^20 = 1.04 seconds approx */
+		volatile  uint32_t delta          = 0; 		 /* Declaration of delta for comparision */
 
-		/* Initialize SysTick*/
-		S32_SysTick->CSR = 0; /* Systick disable for setup */
+		/* Disable LPIT channel 3 for loading */
+		LPIT0->CLRTEN |= LPIT_CLRTEN_CLR_T_EN_3(1);
 
-		/* Load maximun reload value, SysTick is decremental counter */
-		S32_SysTick->RVR = S32_SysTick_RVR_RELOAD_MASK;
+		/* Load LPIT with its maximum value */
+		LPIT0->TMR[3].TVAL = LPIT_TMR_CVAL_TMR_CUR_VAL_MAS;
 
-		/* Enable SysTick and select processor clock as source clock (48Mhz) */
-		S32_SysTick->CSR |= S32_SysTick_CSR_ENABLE_MASK | S32_SysTick_CSR_CLKSOURCE_MASK;
+		/* Enable LPIT channel 3 for timeout start */
+		LPIT0->SETTEN |= LPIT_SETTEN_SET_T_EN_3(1);
 
 		/* Start of timed block */
 		while( delta<cycles_timeout )
@@ -445,7 +457,7 @@ public:
 			}
 
 			/* Get current value of delta */
-			delta = S32_SysTick_RVR_RELOAD_MASK - (S32_SysTick->CVR);
+			delta = LPIT_TMR_CVAL_TMR_CUR_VAL_MAS - (LPIT0->TMR[3].CVAL);
 
 		}
 
@@ -464,18 +476,17 @@ public:
 	 */
 	libuavcan::Result flagPollTimeout_Clear(volatile uint32_t &flagRegister, uint32_t flag_Mask) const
 	{
-		/* Tuning parameter for the number of cpu clock cycles to block for the flag */
-		constexpr uint32_t cycles_timeout = S32_SysTick_RVR_RELOAD_MASK; /* Max value = 0xFFFFFF due to 24 bit SysTick which is approx 0.3 seconds */
-		volatile  uint32_t delta          = 0; 						   	 /* Declaration of delta for comparision */
+		constexpr uint32_t cycles_timeout = 0xFFFFF; /* Timeout of 1/(1Mhz) * 2^20 = 1.04 seconds approx */
+		volatile  uint32_t delta          = 0; 		 /* Declaration of delta for comparision */
 
-		/* Initialize SysTick*/
-		S32_SysTick->CSR = 0; /* Systick disable for setup */
+		/* Disable LPIT channel 3 for loading */
+		LPIT0->CLRTEN |= LPIT_CLRTEN_CLR_T_EN_3(1);
 
-		/* Load maximun reload value, SysTick is decremental counter */
-		S32_SysTick->RVR = S32_SysTick_RVR_RELOAD_MASK;
+		/* Load LPIT with its maximum value */
+		LPIT0->TMR[3].TVAL = LPIT_TMR_CVAL_TMR_CUR_VAL_MAS;
 
-		/* Enable SysTick and select processor clock as source clock (48Mhz) */
-		S32_SysTick->CSR |= S32_SysTick_CSR_ENABLE_MASK | S32_SysTick_CSR_CLKSOURCE_MASK;
+		/* Enable LPIT channel 3 for timeout start */
+		LPIT0->SETTEN |= LPIT_SETTEN_SET_T_EN_3(1);
 
 		/* Start of timed block */
 		while( delta<cycles_timeout )
@@ -487,7 +498,7 @@ public:
 			}
 
 			/* Get current value of delta */
-			delta = S32_SysTick_RVR_RELOAD_MASK - (S32_SysTick->CVR);
+			delta = LPIT_TMR_CVAL_TMR_CUR_VAL_MAS - (LPIT0->TMR[3].CVAL);
 
 		}
 
