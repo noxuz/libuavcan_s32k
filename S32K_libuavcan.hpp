@@ -114,12 +114,23 @@ public:
 
     }
 
-	/* Reconfigure reception filters for dynamic subscription of nodes */
+	/* Reconfigure reception filters for dynamic subscription of nodes
+	 * NOTE: Since filter Iindex to reconfigure isn't provided, only up
+	 * 		 to which filter to modify, the filters in the range
+	 * 		 (filter_config_length, S32K_FILTER_COUNT] are left unaltered
+	 */
 	virtual libuavcan::Result reconfigureFilters(const typename FrameType::Filter* filter_config,
 	                                                 std::size_t                   filter_config_length) override
 	{
 		/* Initialize return value status */
 		libuavcan::Result Status = libuavcan::Result::Success;
+
+		/* Input validation */
+		if( filter_config_length > S32K_FILTER_COUNT )
+		{
+			Status = libuavcan::Result::BadArgument;
+		}
+
 
 		/* Enter freeze mode for filter reconfiguration */
 		CAN0->MCR |= CAN_MCR_HALT_MASK;
@@ -130,22 +141,28 @@ public:
 			Status = flagPollTimeout_Set(CAN0->MCR,CAN_MCR_FRZACK_MASK);
 		}
 
-		/* Setup word 0 (4 Bytes) for MB0
-	     * Extended Data Length      (EDL) = 1
-		 * Bit Rate Switch 		     (BRS) = 1
-		 * Error State Indicator     (ESI) = 0
-		 * Message Buffer Code	    (CODE) = 4 ( Active for reception and empty )
-		 * Substitute Remote Request (SRR) = 0
-		 * ID Extended Bit			 (IDE) = 1
-		 * Remote Tx Request	     (RTR) = 0
-		 * Data Length Code			 (DLC) = 0 ( Valid for transmission only )
-		 * Counter Time Stamp (TIME STAMP) = 0 ( Handled by hardware )
-		 */
-		CAN0->RAMn[0] = CAN_RAMn_DATA_BYTE_0(0xC4) |
-						CAN_RAMn_DATA_BYTE_1(0x20);
+		for( std::uint_fast8_t i = 0; i < filter_config_length; i++ )
+		{
+			/* Setup reception MB's mask from input argument */
+			CAN0->RXIMR[i+2] = filter_config[i]->mask;
 
-		/* Setup Message buffer 29-bit extended ID from parameter */
-		CAN0->RAMn[1] = filter_config->id;
+			/* Setup word 0 (4 Bytes) for ith MB
+			 * Extended Data Length      (EDL) = 1
+			 * Bit Rate Switch 		     (BRS) = 1
+			 * Error State Indicator     (ESI) = 0
+			 * Message Buffer Code	    (CODE) = 4 ( Active for reception and empty )
+			 * Substitute Remote Request (SRR) = 0
+			 * ID Extended Bit			 (IDE) = 1
+			 * Remote Tx Request	     (RTR) = 0
+			 * Data Length Code			 (DLC) = 0 ( Valid for transmission only )
+			 * Counter Time Stamp (TIME STAMP) = 0 ( Handled by hardware )
+			 */
+			CAN0->RAMn[(i+2)*MB_SIZE_WORDS] = CAN_RAMn_DATA_BYTE_0(0xC4) |
+											  CAN_RAMn_DATA_BYTE_1(0x20);
+
+			/* Setup Message buffers 2-7 29-bit extended ID from parameter */
+			CAN0->RAMn[(i+2)*MB_SIZE_WORDS + 1] = filter_config[i]->id;
+		}
 
 		/* Freeze mode exit request */
 		CAN0->MCR &= ~CAN_MCR_HALT_MASK;
