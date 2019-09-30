@@ -111,14 +111,17 @@ public:
 		/* Initialize return value status */
 		libuavcan::Result Status = libuavcan::Result::Success;
 
-		/* Verify that the input frame is of 64-byte payload
+		/*
 		 * o tal vez llenar con bytepaddingPattern del CAN */
 		if (frames[0].getDLC() != CAN::FrameDLC::CodeForLength64)
 		{
 			Status = libuavcan::Result::BadArgument;
 		}
 
+		// Search for an available MB, 0 or 1th
 
+
+		//parse from MSB to LSB
 
 
 		/* Return status code */
@@ -206,6 +209,41 @@ public:
 
 	virtual libuavcan::Result select(libuavcan::duration::Monotonic timeout, bool ignore_write_available) override
 	{
+
+		//Parse the code for MB's if it tells available
+		// CONVERTIR DE MICROSEGUNDOS A CYCLOS DE RELOJ
+
+		constexpr uint32_t cycles_timeout = (uint32_t) timeout.toMicrosecond(); /* Obtain timeout from object */
+		volatile  uint32_t delta          = 0; 		 /* Declaration of delta for comparision */
+
+		/* Disable LPIT channel 3 for loading */
+		LPIT0->CLRTEN |= LPIT_CLRTEN_CLR_T_EN_3(1);
+
+		/* Load LPIT with its maximum value */
+		LPIT0->TMR[3].TVAL = LPIT_TMR_CVAL_TMR_CUR_VAL_MAS;
+
+		/* Enable LPIT channel 3 for timeout start */
+		LPIT0->SETTEN |= LPIT_SETTEN_SET_T_EN_3(1);
+
+		/* Start of timed block */
+		while( delta<cycles_timeout )
+		{
+			flag = // REVISAR CODIGO DE MESSAGE BUFFER U OTRO REGISTRO
+			/* Check if the flag has been set */
+			if (flag)
+			{
+				return libuavcan::Result::Success;
+			}
+
+			/* Get current value of delta */
+			delta = LPIT_TMR_CVAL_TMR_CUR_VAL_MAS - (LPIT0->TMR[3].CVAL);
+
+		}
+
+		/* If this section is reached, means timeout ocurred
+		 * and return error status is returned */
+		return libuavcan::Result::SuccessPartial;
+
 
 	}
 };
@@ -592,10 +630,15 @@ void CAN0_ORed_0_15_MB_IRQHandler(void)
 		}
 
 		std::uint8_t data_ISR_byte[CAN::TypeFD::MaxFrameSizeBytes];
-		/*parse from uint32 to uint8*/
+
+		for(i = 0; i<CAN::TypeFD::MaxFrameSizeBytes; i++)
+		{
+			/* Parses from MSB to LSB in each 32-bit word */
+			data_ISR_byte[i] = ((data_ISR[i/4]) & (0xFF<<(8*(3-(i%4))))) >> (8*(3-(i%4)));
+		}
 
 		/* Create Frame object with constructor */
-		CAN::Frame< CAN::TypeFD::MaxFrameSizeBytes> FrameISR(id_ISR,//dataPointer,dlc_ISR,timestamp_ISR);
+		CAN::Frame< CAN::TypeFD::MaxFrameSizeBytes> FrameISR(id_ISR,data_ISR_byte,dlc_ISR,timestamp_ISR);
 
 		/* Insert the frame into the queue */
 		/* S32K_InterfaceManager::frame_ISRbuffer.push_back() */
