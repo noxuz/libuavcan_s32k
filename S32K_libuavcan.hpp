@@ -32,6 +32,27 @@
 #ifndef S32K_LIBUAVCAN_HPP_INCLUDED
 #define S32K_LIBUAVCAN_HPP_INCLUDED
 
+/**
+ * Integration Note, this driver utilizes the next modules.
+ * 	LPIT: Channels 0,1 and 3
+ * 	FlexCAN0, FlexCAN1: all message buffers
+ *
+ * 	Sets the MCU clocking in Normal RUN mode with the next prescalers:
+ * 	CORE_CLK:  80Mhz
+ * 	SYS_CLK:   80Mhz
+ * 	BUS_CLK:   40Mhz
+ * 	FLASH_CLK: 26.67Mhz
+ *
+ *  Dividers:
+ *  SIRCDIV2 = 8
+ *  SOSCDIV2 = 8
+ *
+ *	LPIT source = SOSCDIV2 (1Mhz)
+ *	FlexCAN source = SYS_CLK (80Mhz)
+ *
+ *	Async dividers not mentioned are left unset and SCG registers are locked
+ */
+
 /* S32K146 header file */
 #include "S32K146.h"
 
@@ -300,7 +321,7 @@ public:
 		 */
 		PCC->PCCn[PCC_FlexCAN0_INDEX] = PCC_PCCn_CGC_MASK; /* FlexCAN0 clock gating */
 		CAN0->MCR   |=  CAN_MCR_MDIS_MASK;				   /* Disable FlexCAN0 module for clock source selection */
-		CAN0->CTRL1 |=  CAN_CTRL1_CLKSRC_MASK;			   /* Select peripheral clock source (undivided FIRC at 48Mhz)*/
+		CAN0->CTRL1 |=  CAN_CTRL1_CLKSRC_MASK;			   /* Select SYS_CLK as source (80Mhz)*/
 		CAN0->MCR 	&= ~CAN_MCR_MDIS_MASK;				   /* Enable FlexCAN0 and automatic transition to freeze mode for setup */
 
 		/* Block for freeze mode entry */
@@ -314,12 +335,12 @@ public:
 					   CAN_MCR_FRZ_MASK;		  /* Enable freeze mode entry when HALT bit is asserted */
 		CAN0->CTRL2 |= CAN_CTRL2_ISOCANFDEN_MASK; /* Activate the use of ISO 11898-1 CAN-FD standard */
 
-		/* CAN Bit Timing (CBT) configuration for a nominal phase of 1 Mbit/s with 24 time quantas,
-		   in accordance with Bosch 2012 specification, sample point at 70.8% */
+		/* CAN Bit Timing (CBT) configuration for a nominal phase of 1 Mbit/s with 80 time quantas,
+		   in accordance with Bosch 2012 specification, sample point at 83.75% */
 
 		CAN0->CBT	|= CAN_CBT_BTF_MASK     |	 /* Enable extended bit timing configurations for CAN-FD
 		 	 	 	 	 	 	 	 	 	 	    for setting up separetely nominal and data phase */
-					   CAN_CBT_EPRESDIV(0)  |	 /* Prescaler divisor factor of 1 for */
+					   CAN_CBT_EPRESDIV(0)  |	 /* Prescaler divisor factor of 1 */
 					   CAN_CBT_EPROPSEG(46) |	 /* Propagation segment of 47 time quantas */
 					   CAN_CBT_EPSEG1(18)	|	 /* Phase buffer segment 1 of 19 time quantas */
 					   CAN_CBT_EPSEG2(12)	|	 /* Phase buffer segment 2 of 13 time quantas */
@@ -327,11 +348,11 @@ public:
 
 
 
-		/* CAN-FD Bit Timing (FDCBT) for a data phase of 4 Mbit/s with 12 time quantas,
-		   in accordance with Bosch 2012 specification */
+		/* CAN-FD Bit Timing (FDCBT) for a data phase of 4 Mbit/s with 20 time quantas,
+		   in accordance with Bosch 2012 specification, sample point at 75% */
 
 		CAN0->FDCBT |= CAN_FDCBT_FPRESDIV(0) |  /* Prescaler divisor factor of 1 */
-					   CAN_FDCBT_FPROPSEG(7) |  /* Propagation semgment of 8 time quantas */
+					   CAN_FDCBT_FPROPSEG(7) |  /* Propagation semgment of 7 time quantas (only register that doesn't add 1) */
 					   CAN_FDCBT_FPSEG1(6)	 |  /* Phase buffer segment 1 of 7 time quantas */
 					   CAN_FDCBT_FPSEG2(4)   |  /* Phase buffer segment 2 of 5 time quantas */
 					   CAN_FDCBT_FRJW(4);       /* Resynchorinzation jump width same as PSEG2 */
@@ -535,7 +556,7 @@ void CAN0_ORed_0_15_MB_IRQHandler(void)
 {
 
 	/* Before anything, get a timestamp  */
-	uint64_t timestamp =  (uint64_t)( ( (uint64_t)(0xFFFFFFFF - LPIT0->TMR[1].CVAL) << 32)  | (  0xFFFFFFFF - LPIT0->TMR[0].CVAL ));
+	libuavcan::time::Monotonic timestampISR = (uint64_t)( ( (uint64_t)(0xFFFFFFFF - LPIT0->TMR[1].CVAL) << 32)  | (  0xFFFFFFFF - LPIT0->TMR[0].CVAL ));
 
 	/* Initialize variable for finding which MB received */
 	std::uint8_t MB_index = 0;
@@ -562,7 +583,10 @@ void CAN0_ORed_0_15_MB_IRQHandler(void)
 		/* Increase frame count */
 		RX_ISRframeCount++;
 
-
+		/* Initialize Frame object to fill with incoming transmission */
+		CAN::Frame< CAN::TypeFD::MaxFrameSizeBytes> FrameISR;
+		
+		/* Parse the Message buffer and later assign to */
 		/* S32K_InterfaceManager::frame_ISRbuffer.push_front() */
 	}
 
