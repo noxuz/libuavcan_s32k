@@ -131,7 +131,7 @@ public:
 	                                   std::size_t& out_frames_read) override
     {
 
-		/* frame_ISRbuffer.pop_back() */
+		/* frame_ISRbuffer.pop_front() */
 
     }
 
@@ -218,7 +218,9 @@ public:
  * InterfaceGroupPtrT = S32K_InterfaceGroup* (raw pointer)
  */
 class S32K_InterfaceManager : public InterfaceManager< S32K_InterfaceGroup, S32K_InterfaceGroup* >{
-
+private:
+	/* Object member created from manager instantiation */
+	InterfaceGroupType S32K_InterfaceGroupObj;
 public:
 
 	/* Initializes the peripherals needed for libuavcan driver layer */
@@ -427,8 +429,8 @@ public:
 		/* Initialize intermediate RX buffer for ISR reception */
 		static std::deque<CAN::Frame> frame_ISRbuffer;
 
-		/* If function ended successfully, set pointer to this base class address */
-		out_group = static_cast<InterfaceGroupPtrType>(this);
+		/* If function ended successfully, return address of private object member */
+		out_group = &S32K_InterfaceGroupObj;
 
 		/* Return code for start of S32K_InterfaceGroup */
 		return Status;
@@ -556,7 +558,7 @@ void CAN0_ORed_0_15_MB_IRQHandler(void)
 {
 
 	/* Before anything, get a timestamp  */
-	libuavcan::time::Monotonic timestampISR = (uint64_t)( ( (uint64_t)(0xFFFFFFFF - LPIT0->TMR[1].CVAL) << 32)  | (  0xFFFFFFFF - LPIT0->TMR[0].CVAL ));
+	libuavcan::time::Monotonic timestamp_ISR = (uint64_t)( ( (uint64_t)(0xFFFFFFFF - LPIT0->TMR[1].CVAL) << 32)  | (  0xFFFFFFFF - LPIT0->TMR[0].CVAL ));
 
 	/* Initialize variable for finding which MB received */
 	std::uint8_t MB_index = 0;
@@ -574,21 +576,36 @@ void CAN0_ORed_0_15_MB_IRQHandler(void)
 		case 0x40:
 			MB_index = 6;
 
-	/* Clear MB interrupt flag (write 1 to clear)*/
-	CAN0->IFLAG1 |= (1<<MB_index);
-
 	/* Receive a frame only if the buffer its under its capacity */
 	if (RX_ISRframeCount <= Frame_Capactiy )
 	{
 		/* Increase frame count */
 		RX_ISRframeCount++;
 
-		/* Initialize Frame object to fill with incoming transmission */
-		CAN::Frame< CAN::TypeFD::MaxFrameSizeBytes> FrameISR;
-		
-		/* Parse the Message buffer and later assign to */
-		/* S32K_InterfaceManager::frame_ISRbuffer.push_front() */
+		/* Parse the Message buffer, read of the Control and stauts register locks the MB */
+		std::uint_fast8_t dlc_ISR = ((CAN0->RAMn[MB_index*MB_SIZE_WORDS + 0]) & CAN_WMBn_CS_DLC_MASK ) >> CAN_WMBn_CS_DLC_SHIFT;
+		std::uint32_t id_ISR = (CAN0->RAMn[MB_index*MB_SIZE_WORDS + 1]) & CAN_WMBn_ID_ID_MASK;
+		std::uint32_t data_ISR[16];
+		for(std::uint_fast8_t i = 0; i<16; i++)
+		{
+			data_ISR[i] = CAN0->RAMn[MB_index*MB_SIZE_WORDS + 2 + i]
+		}
+
+		std::uint8_t data_ISR_byte[CAN::TypeFD::MaxFrameSizeBytes];
+		/*parse from uint32 to uint8*/
+
+		/* Create Frame object with constructor */
+		CAN::Frame< CAN::TypeFD::MaxFrameSizeBytes> FrameISR(id_ISR,//dataPointer,dlc_ISR,timestamp_ISR);
+
+		/* Insert the frame into the queue */
+		/* S32K_InterfaceManager::frame_ISRbuffer.push_back() */
 	}
+
+	/* Unlock the MB by reading the timer register */
+	uint32_t dummyTimer = CAN0->TIMER;
+
+	/* Clear MB interrupt flag (write 1 to clear)*/
+	CAN0->IFLAG1 |= (1<<MB_index);
 
 }
 
