@@ -129,13 +129,14 @@ public:
 
     }
 
+	/* Read from the intermediate ISR Frame buffer */
 	virtual libuavcan::Result read(std::uint_fast8_t interface_index,
 	                                   FrameT (&out_frames)[MaxRxFrames],
 	                                   std::size_t& out_frames_read) override
     {
-
-		/* Declare return value */
-		libuavcan::Result Status;
+		/* Initialize return value and out_frames_read output reference value */
+		libuavcan::Result Status = libuav::Result::Failure;
+		out_frames_read = 0;
 
 		/* Check if the ISR buffer isn't empty */
 		if(!S32K_InterfaceManager::frame_ISRbuffer.empty())
@@ -146,10 +147,14 @@ public:
 			/* Pop the front element of the queue buffer */
 			S32K_InterfaceManager::frame_ISRbuffer.pop_front();
 
-			/* If read is successful, return success */
+			/* Default minimal RX number of frames read */
+			out_frames_read = MaxRxFrames;
+
+			/* If read is successful, status is success */
 			Status = libuavcan::Result::Success;
 		}
 
+		/* Return status code */
 	    return Status;
 
     }
@@ -170,7 +175,6 @@ public:
 		{
 			Status = libuavcan::Result::BadArgument;
 		}
-
 
 		/* Enter freeze mode for filter reconfiguration */
 		CAN0->MCR |= CAN_MCR_HALT_MASK;
