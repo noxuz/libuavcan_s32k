@@ -223,14 +223,12 @@ public:
 		return Status;
 	}
 
+	/* Block with timeout for available Message buffers */
 	virtual libuavcan::Result select(libuavcan::duration::Monotonic timeout, bool ignore_write_available) override
 	{
-
-		//Parse the code for MB's if it tells available
-		// CONVERTIR DE MICROSEGUNDOS A CYCLOS DE RELOJ
-
-		constexpr uint32_t cycles_timeout = (uint32_t) timeout.toMicrosecond(); /* Obtain timeout from object */
-		volatile  uint32_t delta          = 0; 		 /* Declaration of delta for comparision */
+		/* Obtain timeout from object */
+		constexpr uint32_t cycles_timeout = static_cast<std::uint32_t>(timeout.toMicrosecond());
+		volatile  uint32_t delta          = 0; /* Declaration of delta for comparision */
 
 		/* Disable LPIT channel 3 for loading */
 		LPIT0->CLRTEN |= LPIT_CLRTEN_CLR_T_EN_3(1);
@@ -244,8 +242,27 @@ public:
 		/* Start of timed block */
 		while( delta<cycles_timeout )
 		{
-			flag = // REVISAR CODIGO DE MESSAGE BUFFER U OTRO REGISTRO
-			/* Check if the flag has been set */
+			/* If ignore = true, check only RX buffers (2th-6th) */
+			if(ignore_write_available)
+			{
+				/* Get CODE from Control and Status word of each MB */
+				std::uint32_t flagMB2 = (CAN0->RAMn[2*MB_SIZE_WORDS]) & CAN_RAMn_DATA_BYTE_0(0xF);
+				std::uint32_t flagMB3 = (CAN0->RAMn[3*MB_SIZE_WORDS]) & CAN_RAMn_DATA_BYTE_0(0xF);
+				std::uint32_t flagMB4 = (CAN0->RAMn[4*MB_SIZE_WORDS]) & CAN_RAMn_DATA_BYTE_0(0xF);
+				std::uint32_t flagMB5 = (CAN0->RAMn[5*MB_SIZE_WORDS]) & CAN_RAMn_DATA_BYTE_0(0xF);
+				std::uint32_t flagMB6 = (CAN0->RAMn[6*MB_SIZE_WORDS]) & CAN_RAMn_DATA_BYTE_0(0xF);
+
+				/* Any CODE must be 0 */
+				std::uint32_t flag = (flagMB2 == 0)||(flagMB3 == 0)||(flagMB4 == 0)||(flagMB5 == 0)||(flagMB6 == 0);
+			}
+
+			/* All MB's CODE get checked for availability */
+			else
+			{
+				/* Check inactive message buffer IMB flag, checks code 0 for Rx or 0b1000 for Tx */
+				std::uint32_t flag = (CAN0->ESR2 & CAN_ESR2_IMB_MASK)
+			}
+
 			if (flag)
 			{
 				return libuavcan::Result::Success;
@@ -257,9 +274,8 @@ public:
 		}
 
 		/* If this section is reached, means timeout ocurred
-		 * and return error status is returned */
-		return libuavcan::Result::SuccessPartial;
-
+		 * and return timeout status */
+		return libuavcan::Result::SuccessTimeout;
 
 	}
 };
