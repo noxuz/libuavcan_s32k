@@ -134,7 +134,23 @@ public:
 	                                   std::size_t& out_frames_read) override
     {
 
-		/* frame_ISRbuffer.pop_front() */
+		/* Declare return value */
+		libuavcan::Result Status;
+
+		/* Check if the ISR buffer isn't empty */
+		if(!S32K_InterfaceManager::frame_ISRbuffer.empty())
+		{
+			/* Get the front element of the queue buffer */
+			out_frames[1] = FS32K_InterfaceManager::frame_ISRbuffer.front();
+
+			/* Pop the front element of the queue buffer */
+			S32K_InterfaceManager::frame_ISRbuffer.pop_front();
+
+			/* If read is successful, return success */
+			Status = libuavcan::Result::Success;
+		}
+
+	    return Status;
 
     }
 
@@ -641,7 +657,7 @@ void CAN0_ORed_0_15_MB_IRQHandler(void)
 		CAN::Frame< CAN::TypeFD::MaxFrameSizeBytes> FrameISR(id_ISR,data_ISR_byte,dlc_ISR,timestamp_ISR);
 
 		/* Insert the frame into the queue */
-		/* S32K_InterfaceManager::frame_ISRbuffer.push_back() */
+		S32K_InterfaceManager::frame_ISRbuffer.push_back(FrameISR);
 	}
 
 	/* Unlock the MB by reading the timer register */
