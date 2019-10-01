@@ -275,6 +275,9 @@ class S32K_InterfaceManager : public InterfaceManager< S32K_InterfaceGroup, S32K
 private:
 	/* Object member created from manager instantiation */
 	InterfaceGroupType S32K_InterfaceGroupObj;
+
+	/* Intermediate RX buffer for ISR reception */
+	static std::deque<CAN::Frame> frame_ISRbuffer;
 public:
 
 	/* Initializes the peripherals needed for libuavcan driver layer */
@@ -479,9 +482,6 @@ public:
 		{
 		Status = flagPollTimeout_Clear(CAN0->MCR,CAN_MCR_NOTRDY_MASK);
 		}
-
-		/* Initialize intermediate RX buffer for ISR reception */
-		static std::deque<CAN::Frame> frame_ISRbuffer;
 
 		/* If function ended successfully, return address of private object member */
 		out_group = &S32K_InterfaceGroupObj;
