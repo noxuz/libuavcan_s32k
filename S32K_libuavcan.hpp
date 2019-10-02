@@ -102,27 +102,93 @@ public:
 		return S32K146_CANFD_COUNT;
 	}
 
+	/* Function for sending a frame through FLEXCAN, current implementation supports
+	 * MaxTxFrames = 1 so frames_len must be 1
+	 */
 	virtual libuavcan::Result write(std::uint_fast8_t interface_index,
 	                                    const FrameT (&frames)[MaxTxFrames],
 	                                    std::size_t  frames_len,
 	                                    std::size_t& out_frames_written) override
     {
-
 		/* Initialize return value status */
-		libuavcan::Result Status = libuavcan::Result::Success;
+		libuavcan::Result Status = libuavcan::Result::BufferFull;
 
-		/*
-		 * o tal vez llenar con bytepaddingPattern del CAN */
-		if (frames[0].getDLC() != CAN::FrameDLC::CodeForLength64)
+		/* Input validation */
+		if(frames_len > MaxTxFrames)
 		{
 			Status = libuavcan::Result::BadArgument;
 		}
 
-		// Search for an available MB, 0 or 1th
+		std::uint32_t CODE_MB0 = ((CAN0->RAMn[0*MB_SIZE_WORDS] & CAN_RAMn_DATA_BYTE_0(0xF)) >> CAN_RAMn_DATA_BYTE_0_SHIFT );
+		std::uint32_t CODE_MB1 = ((CAN0->RAMn[1*MB_SIZE_WORDS] & CAN_RAMn_DATA_BYTE_0(0xF)) >> CAN_RAMn_DATA_BYTE_0_SHIFT );
+		std::uint32_t flag = 0;
+
+		/* Check if Tx Message buffer status CODE is inactive (0b1000) */
+		if( CODE_MB0 == 0x8 )
+		{
+			/* Transmit through MB0 */
+			CAN0->IFLAG1 |= CAN_IFLAG1_BUF0I_MASK; /* Ensure interurpt flag for MB0 is cleared (write to clear register) */
+
+			/* Fill up payload from MSB to LSB in function of frame's dlc */
+			for(std::uint8_t i = 0; i<16; i++)
+			{
+				/* Build up each 32 bit word with 4 indices from frame.data uint8_t array */
+				CAN0->RAMn[0*MB_SIZE_WORDS + 2 + i] = ((std::uint32_t)(frames[0].data[(i*4) + 1] << 24))  |
+													  ((std::uint32_t)(frames[0].data[(i*4) + 2] << 16))  |
+													  ((std::uint32_t)(frames[0].data[(i*4) + 3] << 8))	  |
+													  	  	  	  	  (frames[0].data[(i*4) + 4] << 0);
+			}
+
+			/* Fill up frame ID */
+			CAN0->RAMn[0*MB_SIZE_WORDS + 1] = frames[0].id & CAN_WMBn_ID_ID_MASK;
+
+		   /* Fill up word 0 of frame and transmit it
+			* Extended Data Length       (EDL) = 1
+			* Bit Rate Switch 		     (BRS) = 1
+			* Error State Indicator      (ESI) = 0
+			* Message Buffer Code	    (CODE) = 12 ( Transmit data frame )
+			* Substitute Remote Request  (SRR) = 1  ( Mandatory 1 for Tx )
+			* ID Extended Bit			 (IDE) = 1
+			* Remote Tx Request	         (RTR) = 0
+			* Data Length Code			 (DLC) = frame.getdlc()
+		    * Counter Time Stamp  (TIME STAMP) = 0 ( Handled by hardware )
+			*/
+			CAN0->RAMn[0*MB_SIZE_WORDS + 0] = CAN_RAMn_DATA_BYTE_1(0x60) 			  |
+											  CAN_WMBn_CS_DLC(frames[0].getdlc()) |
+					  	  	  	  	  	  	  CAN_RAMn_DATA_BYTE_0(0xCC);
 
 
-		//parse from MSB to LSB
 
+
+			/* Set the return status as successfull */
+			Status = libuavcan::Result::Success;
+
+			/* Argument assignment to 1 Frame transmitted successfully */
+			out_frames_written = 1;
+
+			/* Ensure the interrupt flag is cleared after a successfull transmission */
+			CAN0->IFLAG1 |= CAN_IFLAG1_BUF0I_MASK;
+
+			/* Turn on flag for not retransmitting on next MB*/
+			flag = 1;
+		}
+		else if ( (CODE_MB1 == 0x8 ) && (flag == 0) )
+		{
+			/* Transmit through MB1 */
+			CAN0->IFLAG1 |= CAN_IFLAG1_BUF4TO1I(1);  /* Ensure interurpt flag for MB1 is cleared (write to clear register) */
+
+
+
+
+			/* Set the return status as successfull */
+			Status = libuavcan::Result::Success;
+
+			/* Argument assignment to 1 Frame transmitted successfully */
+			out_frames_written = 1;
+
+			/* Ensure the interrupt flag is cleared after a successfull transmission */
+			CAN0->IFLAG1 |= CAN_IFLAG1_BUF4TO1I(1);
+		}
 
 		/* Return status code */
 		return Status;
