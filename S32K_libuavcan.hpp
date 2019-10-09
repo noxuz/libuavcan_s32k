@@ -92,6 +92,7 @@ private:
 	/* libuavcan constants for S32K driver layer */
 	constexpr std::uint_fast8_t S32K146_CANFD_COUNT = 2u;  /* Number of CAN-FD capable FlexCAN modules  */
 	constexpr std::uint_fast8_t MB_SIZE_WORDS       = 18u; /* Size in words (4 bytes) of the offset between message buffers */
+	constexpr std::uint_fast8_t MB_DATA_OFFSET      = 2u;  /* Offset in words for reaching the payload of a message buffer */
 	constexpr std::size_t		S32K_FILTER_COUNT	= 5u;  /* Number of filters supported by a single FlexCAN instace */
 
 public:
@@ -140,7 +141,7 @@ public:
 			for(std::uint8_t i = 0; i < (payloadLength/4); i++)
 			{
 				/* Build up each 32 bit word with 4 indices from frame.data uint8_t array */
-				CAN0->RAMn[0*MB_SIZE_WORDS + 2 + i] = ((std::uint32_t)(frames[0].data[(i*4) + 0] << 24))  |
+				CAN0->RAMn[0*MB_SIZE_WORDS + MB_DATA_OFFSET + i] = ((std::uint32_t)(frames[0].data[(i*4) + 0] << 24))  |
 													  ((std::uint32_t)(frames[0].data[(i*4) + 1] << 16))  |
 													  ((std::uint32_t)(frames[0].data[(i*4) + 2] << 8))	  |
 													  	  	  	  	  (frames[0].data[(i*4) + 3] << 0);
@@ -149,7 +150,7 @@ public:
 			/* Fill up payload of frame's bytes that dont fill up a 32-bit word, cases of 0,1,2,3,5,6,7 byte data length */
 			for(std::uint8_t i = 0; i < (payloadLength%4) ; i++)
 			{
-				CAN0->RAMn[0*MB_SIZE_WORDS + 2 + (payloadLength/4)] |= (std::uint32_t)(frames[0].data[ ((payloadLength/4) * 4) + i ] << ((3-i)*8) );
+				CAN0->RAMn[0*MB_SIZE_WORDS + MB_DATA_OFFSET + (payloadLength/4)] |= (std::uint32_t)(frames[0].data[ ((payloadLength/4) * 4) + i ] << ((3-i)*8) );
 			}
 
 			/* Fill up frame ID */
@@ -195,7 +196,7 @@ public:
 			for(std::uint8_t i = 0; i < (payloadLength/4); i++)
 			{
 				/* Build up each 32 bit word with 4 indices from frame.data uint8_t array */
-				CAN0->RAMn[1*MB_SIZE_WORDS + 2 + i] = ((std::uint32_t)(frames[0].data[(i*4) + 0] << 24))  |
+				CAN0->RAMn[1*MB_SIZE_WORDS + MB_DATA_OFFSET + i] = ((std::uint32_t)(frames[0].data[(i*4) + 0] << 24))  |
 													  ((std::uint32_t)(frames[0].data[(i*4) + 1] << 16))  |
 													  ((std::uint32_t)(frames[0].data[(i*4) + 2] << 8))	  |
 													  	  	  	  	  (frames[0].data[(i*4) + 3] << 0);
@@ -204,7 +205,7 @@ public:
 			/* Fill up payload of frame's bytes that dont fill up a 32-bit word, cases of 0,1,2,3,5,6,7 byte data length */
 			for(std::uint8_t i = 0; i < (payloadLength%4) ; i++)
 			{
-				CAN0->RAMn[1*MB_SIZE_WORDS + 2 + (payloadLength/4)] |= (std::uint32_t)(frames[0].data[ ((payloadLength/4) * 4) + i ] << ((3-i)*8) );
+				CAN0->RAMn[1*MB_SIZE_WORDS + MB_DATA_OFFSET + (payloadLength/4)] |= (std::uint32_t)(frames[0].data[ ((payloadLength/4) * 4) + i ] << ((3-i)*8) );
 			}
 
 			/* Fill up frame ID */
@@ -767,10 +768,6 @@ void CAN0_ORed_0_15_MB_IRQHandler(void)
 		/* Increase frame count */
 		RX_ISRframeCount++;
 
-
-		/*///////////////Parse in function of the DLC */
-		/* Check special cases with lower DLC's */
-
 		/* Parse the Message buffer, read of the Control and status register locks the MB */
 
 		/* Get dlc and convert to data length in bytes */
@@ -786,13 +783,13 @@ void CAN0_ORed_0_15_MB_IRQHandler(void)
 		/* Parse the full words of the MB in bytes */
 		for(std::uint_fast8_t i = 0; i < payloadLength_ISR; i++)
 		{
-			data_ISR_byte[i] = ( CAN0->RAMn[MB_index*MB_SIZE_WORDS + 2 + i/4] & (0xFF << 8*(3 - i%4) ) ) >> 8*(3 - i%4) ;
+			data_ISR_byte[i] = ( CAN0->RAMn[MB_index*MB_SIZE_WORDS + MB_DATA_OFFSET + i/4] & (0xFF << 8*(3 - i%4) ) ) >> 8*(3 - i%4) ;
 		}
 
 		/* Parse remaining bytes that don't complete up to a word if there are */
 		for(std::uint_fast8_t i = 0; i < (payloadLength_ISR%4); i++)
 		{
-			data_ISR_byte[ payloadLength_ISR - (payloadLength_ISR%4) + i] = ( CAN0->RAMn[MB_index*MB_SIZE_WORDS + 2 + (payloadLength_ISR/4)] & (0xFF << 8*(3-i)) ) >> 8*(3-i);
+			data_ISR_byte[ payloadLength_ISR - (payloadLength_ISR%4) + i] = ( CAN0->RAMn[MB_index*MB_SIZE_WORDS + MB_DATA_OFFSET + (payloadLength_ISR/4)] & (0xFF << 8*(3-i)) ) >> 8*(3-i);
 		}
 
 		/* Create Frame object with constructor */
