@@ -129,14 +129,24 @@ public:
 			/* Transmit through MB0 */
 			CAN0->IFLAG1 |= CAN_IFLAG1_BUF0I_MASK; /* Ensure interurpt flag for MB0 is cleared (write to clear register) */
 
+
+			/* Get data length of the frame wished to be written */
+			std::uint_fast8_t payloadLength = frames[0].getDataLength();
+
 			/* Fill up payload from MSB to LSB in function of frame's dlc */
-			for(std::uint8_t i = 0; i<16; i++)
+			for(std::uint8_t i = 0; i < (payloadLength/4); i++)
 			{
 				/* Build up each 32 bit word with 4 indices from frame.data uint8_t array */
-				CAN0->RAMn[0*MB_SIZE_WORDS + 2 + i] = ((std::uint32_t)(frames[0].data[(i*4) + 1] << 24))  |
-													  ((std::uint32_t)(frames[0].data[(i*4) + 2] << 16))  |
-													  ((std::uint32_t)(frames[0].data[(i*4) + 3] << 8))	  |
-													  	  	  	  	  (frames[0].data[(i*4) + 4] << 0);
+				CAN0->RAMn[0*MB_SIZE_WORDS + 2 + i] = ((std::uint32_t)(frames[0].data[(i*4) + 0] << 24))  |
+													  ((std::uint32_t)(frames[0].data[(i*4) + 1] << 16))  |
+													  ((std::uint32_t)(frames[0].data[(i*4) + 2] << 8))	  |
+													  	  	  	  	  (frames[0].data[(i*4) + 3] << 0);
+			}
+
+			/* Fill up payload of frame's bytes that dont fill up a 32-bit word, cases of 0,1,2,3,5,6,7 byte data length */
+			for(std::uint8_t i = 0; i < (payloadLength%4) ; i++)
+			{
+				CAN0->RAMn[0*MB_SIZE_WORDS + 2 + (payloadLength/4)] |= (std::uint32_t)(frames[0].data[ ((payloadLength/4) * 4) + i ] << ((3-i)*8) );
 			}
 
 			/* Fill up frame ID */
@@ -156,9 +166,6 @@ public:
 			CAN0->RAMn[0*MB_SIZE_WORDS + 0] = CAN_RAMn_DATA_BYTE_1(0x60) 			  |
 											  CAN_WMBn_CS_DLC(frames[0].getdlc()) |
 					  	  	  	  	  	  	  CAN_RAMn_DATA_BYTE_0(0xCC);
-
-
-
 
 			/* Set the return status as successfull */
 			Status = libuavcan::Result::Success;
@@ -721,6 +728,9 @@ void CAN0_ORed_0_15_MB_IRQHandler(void)
 	{
 		/* Increase frame count */
 		RX_ISRframeCount++;
+
+
+		/*///////////////Parse in function of the DLC */
 
 		/* Parse the Message buffer, read of the Control and stauts register locks the MB */
 		std::uint_fast8_t dlc_ISR = ((CAN0->RAMn[MB_index*MB_SIZE_WORDS + 0]) & CAN_WMBn_CS_DLC_MASK ) >> CAN_WMBn_CS_DLC_SHIFT;
