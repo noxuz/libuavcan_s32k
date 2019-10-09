@@ -35,7 +35,8 @@
 /**
  * Integration Note, this driver utilizes the next modules.
  * 	LPIT: Channels 0,1 and 3
- * 	FlexCAN0, FlexCAN1: all message buffers
+ * 	FlexCAN: All message buffers from each instance.
+ * 			 ISR priority not set, thus, it is determined by its position in the vector.
  *
  * 	Sets the MCU clocking in Normal RUN mode with the next prescalers:
  * 	CORE_CLK:  80Mhz
@@ -49,6 +50,8 @@
  *
  *	LPIT source = SOSCDIV2 (1Mhz)
  *	FlexCAN source = SYS_CLK (80Mhz)
+ *
+ *	FlexCAN interrupt priority Is
  *
  *	Async dividers not mentioned are left unset and SCG registers are locked
  */
@@ -181,11 +184,46 @@ public:
 		}
 		else if ( (CODE_MB1 == 0x8 ) && (flag == 0) )
 		{
+
 			/* Transmit through MB1 */
 			CAN0->IFLAG1 |= CAN_IFLAG1_BUF4TO1I(1);  /* Ensure interurpt flag for MB1 is cleared (write to clear register) */
 
+			/* Get data length of the frame wished to be written */
+			std::uint_fast8_t payloadLength = frames[0].getDataLength();
 
+			/* Fill up payload from MSB to LSB in function of frame's dlc */
+			for(std::uint8_t i = 0; i < (payloadLength/4); i++)
+			{
+				/* Build up each 32 bit word with 4 indices from frame.data uint8_t array */
+				CAN0->RAMn[1*MB_SIZE_WORDS + 2 + i] = ((std::uint32_t)(frames[0].data[(i*4) + 0] << 24))  |
+													  ((std::uint32_t)(frames[0].data[(i*4) + 1] << 16))  |
+													  ((std::uint32_t)(frames[0].data[(i*4) + 2] << 8))	  |
+													  	  	  	  	  (frames[0].data[(i*4) + 3] << 0);
+			}
 
+			/* Fill up payload of frame's bytes that dont fill up a 32-bit word, cases of 0,1,2,3,5,6,7 byte data length */
+			for(std::uint8_t i = 0; i < (payloadLength%4) ; i++)
+			{
+				CAN0->RAMn[1*MB_SIZE_WORDS + 2 + (payloadLength/4)] |= (std::uint32_t)(frames[0].data[ ((payloadLength/4) * 4) + i ] << ((3-i)*8) );
+			}
+
+			/* Fill up frame ID */
+			CAN0->RAMn[1*MB_SIZE_WORDS + 1] = frames[0].id & CAN_WMBn_ID_ID_MASK;
+
+		   /* Fill up word 0 of frame and transmit it
+			* Extended Data Length       (EDL) = 1
+			* Bit Rate Switch 		     (BRS) = 1
+			* Error State Indicator      (ESI) = 0
+			* Message Buffer Code	    (CODE) = 12 ( Transmit data frame )
+			* Substitute Remote Request  (SRR) = 1  ( Mandatory 1 for Tx )
+			* ID Extended Bit			 (IDE) = 1
+			* Remote Tx Request	         (RTR) = 0
+			* Data Length Code			 (DLC) = frame.getdlc()
+		    * Counter Time Stamp  (TIME STAMP) = 0 ( Handled by hardware )
+			*/
+			CAN0->RAMn[1*MB_SIZE_WORDS + 0] = CAN_RAMn_DATA_BYTE_1(0x60) 			  |
+											  CAN_WMBn_CS_DLC(frames[0].getdlc()) |
+					  	  	  	  	  	  	  CAN_RAMn_DATA_BYTE_0(0xCC);
 
 			/* Set the return status as successfull */
 			Status = libuavcan::Result::Success;
@@ -731,22 +769,30 @@ void CAN0_ORed_0_15_MB_IRQHandler(void)
 
 
 		/*///////////////Parse in function of the DLC */
+		/* Check special cases with lower DLC's */
 
-		/* Parse the Message buffer, read of the Control and stauts register locks the MB */
-		std::uint_fast8_t dlc_ISR = ((CAN0->RAMn[MB_index*MB_SIZE_WORDS + 0]) & CAN_WMBn_CS_DLC_MASK ) >> CAN_WMBn_CS_DLC_SHIFT;
+		/* Parse the Message buffer, read of the Control and status register locks the MB */
+
+		/* Get dlc and convert to data length in bytes */
+		CAN::FrameDLC dlc_ISR = ((CAN0->RAMn[MB_index*MB_SIZE_WORDS + 0]) & CAN_WMBn_CS_DLC_MASK ) >> CAN_WMBn_CS_DLC_SHIFT;
+		std::uint_fast8_t payloadLength_ISR = CAN::dlcToLength(dlc_ISR);
+
+		/* Get the id */
 		std::uint32_t id_ISR = (CAN0->RAMn[MB_index*MB_SIZE_WORDS + 1]) & CAN_WMBn_ID_ID_MASK;
-		std::uint32_t data_ISR[16];
-		for(std::uint_fast8_t i = 0; i<16; i++)
+
+		/* Array for parsing from native uint32_t to uint8_t */
+		std::uint8_t data_ISR_byte[payloadLength_ISR];
+
+		/* Parse the full words of the MB in bytes */
+		for(std::uint_fast8_t i = 0; i < payloadLength_ISR; i++)
 		{
-			data_ISR[i] = CAN0->RAMn[MB_index*MB_SIZE_WORDS + 2 + i]
+			data_ISR_byte[i] = ( CAN0->RAMn[MB_index*MB_SIZE_WORDS + 2 + i/4] & (0xFF << 8*(3 - i%4) ) ) >> 8*(3 - i%4) ;
 		}
 
-		std::uint8_t data_ISR_byte[CAN::TypeFD::MaxFrameSizeBytes];
-
-		for(i = 0; i<CAN::TypeFD::MaxFrameSizeBytes; i++)
+		/* Parse remaining bytes that don't complete up to a word if there are */
+		for(std::uint_fast8_t i = 0; i < (payloadLength_ISR%4); i++)
 		{
-			/* Parses from MSB to LSB in each 32-bit word */
-			data_ISR_byte[i] = ((data_ISR[i/4]) & (0xFF<<(8*(3-(i%4))))) >> (8*(3-(i%4)));
+			data_ISR_byte[ payloadLength_ISR - (payloadLength_ISR%4) + i] = ( CAN0->RAMn[MB_index*MB_SIZE_WORDS + 2 + (payloadLength_ISR/4)] & (0xFF << 8*(3-i)) ) >> 8*(3-i);
 		}
 
 		/* Create Frame object with constructor */
@@ -757,7 +803,7 @@ void CAN0_ORed_0_15_MB_IRQHandler(void)
 	}
 
 	/* Unlock the MB by reading the timer register */
-	uint32_t dummyTimer = CAN0->TIMER;
+	std::uint32_t dummyTimer = CAN0->TIMER;
 
 	/* Clear MB interrupt flag (write 1 to clear)*/
 	CAN0->IFLAG1 |= (1<<MB_index);
