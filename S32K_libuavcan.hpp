@@ -56,8 +56,9 @@
  *	Async dividers not mentioned are left unset and SCG registers are locked
  */
 
-/* S32K146 header file */
+/* S32K1xx registers and features header file */
 #include "S32K146.h"
+#include "S32K146_features.h"
 
 /* libuavcan core header files */
 #include "libuavcan/media/can.hpp"
@@ -65,6 +66,22 @@
 
 /* STL queue for the intermediate ISR buffer */
 #include <deque>
+
+/* Macros for portability in the CAN-FD enabled FlexCAN modules in S32K1 familiy */
+#if defined(MCU_S32K116) | defined(MCU_S32K118)
+
+#define FEATURE_CAN_HAS_FD_ARRAY	{FEATURE_CAN0_HAS_FD}
+
+#elif defined(MCU_S32K142)
+
+#define FEATURE_CAN_HAS_FD_ARRAY	{FEATURE_CAN0_HAS_FD, FEATURE_CAN1_HAS_FD}
+
+#elif defined(MCU_S32K144) | defined(MCU_S32K146) | defined(MCU_S32K148)
+
+#define FEATURE_CAN_HAS_FD_ARRAY	{FEATURE_CAN0_HAS_FD, FEATURE_CAN1_HAS_FD, FEATURE_CAN2_HAS_FD}
+
+#endif
+
 
 namespace libuavcan
 {
