@@ -56,7 +56,8 @@
  *	Async dividers not mentioned are left unset and SCG registers are locked
  */
 
-/* S32K1xx registers and features header file */
+/* Include desired target S32K1xx registers and features header files,
+ * defaults to S32K144 from NXP's UAVCAN node board */
 #include "S32K146.h"
 #include "S32K146_features.h"
 
@@ -67,8 +68,8 @@
 /* STL queue for the intermediate ISR buffer */
 #include <deque>
 
-/* Macros for portability in the CAN-FD enabled FlexCAN modules in S32K1 familiy */
-#if defined(MCU_S32K116) | defined(MCU_S32K118)
+/* Array macros from MCU headers for portability in the CAN-FD enabled FlexCAN modules in S32K1 familiy */
+#if defined(MCU_S32K116) || defined(MCU_S32K118)
 
 #define FEATURE_CAN_HAS_FD_ARRAY	{FEATURE_CAN0_HAS_FD}
 
@@ -76,7 +77,7 @@
 
 #define FEATURE_CAN_HAS_FD_ARRAY	{FEATURE_CAN0_HAS_FD, FEATURE_CAN1_HAS_FD}
 
-#elif defined(MCU_S32K144) | defined(MCU_S32K146) | defined(MCU_S32K148)
+#elif defined(MCU_S32K144) || defined(MCU_S32K146) || defined(MCU_S32K148)
 
 #define FEATURE_CAN_HAS_FD_ARRAY	{FEATURE_CAN0_HAS_FD, FEATURE_CAN1_HAS_FD, FEATURE_CAN2_HAS_FD}
 
@@ -107,7 +108,6 @@ class S32K_InterfaceGroup : public InterfaceGroup< CAN::Frame< CAN::TypeFD::MaxF
 private:
 
 	/* libuavcan constants for S32K driver layer */
-	constexpr std::uint_fast8_t S32K146_CANFD_COUNT = 2u;  /* Number of CAN-FD capable FlexCAN modules  */
 	constexpr std::uint_fast8_t MB_SIZE_WORDS       = 18u; /* Size in words (4 bytes) of the offset between message buffers */
 	constexpr std::uint_fast8_t MB_DATA_OFFSET      = 2u;  /* Offset in words for reaching the payload of a message buffer */
 	constexpr std::size_t		S32K_FILTER_COUNT	= 5u;  /* Number of filters supported by a single FlexCAN instace */
@@ -119,8 +119,19 @@ public:
 	 */
 	virtual std::uint_fast8_t getInterfaceCount() const override
 	{
-		/* 2 FlexCAN instances in S32K146 are CAN-FD capable */
-		return S32K146_CANFD_COUNT;
+		/* Initialize return value */
+		std::uint_fast8_t CANFD_count = 0;
+
+		/* Instantiate an array from macro */
+		std::uint_fast8_t CANFD_array = FEATURE_CAN_HAS_FD_ARRAY;
+
+		/* Acumulate instances of CANFD capable FlexCAN instances */
+		for(std::uint_fast8_t i = 0; i < CAN_INSTANCE_COUNT; i++)
+		{
+			CANFD_count += CANFD_array[i];
+		}
+
+		return CANFD_count;
 	}
 
 	/* Function for sending a frame through FLEXCAN, current implementation supports
@@ -817,7 +828,7 @@ void CAN0_ORed_0_15_MB_IRQHandler(void)
 	}
 
 	/* Unlock the MB by reading the timer register */
-	std::uint32_t dummyTimer = CAN0->TIMER;
+	(std::void)(CAN0->TIMER);
 
 	/* Clear MB interrupt flag (write 1 to clear)*/
 	CAN0->IFLAG1 |= (1<<MB_index);
