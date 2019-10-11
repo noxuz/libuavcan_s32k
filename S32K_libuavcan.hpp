@@ -67,7 +67,7 @@
 /* STL queue for the intermediate ISR buffer */
 #include <deque>
 
-/* Array macros from MCU headers for portability in the CAN-FD enabled FlexCAN modules in S32K1 familiy */
+/* Macros from MCU header for portability in the CAN-FD enabled FlexCAN modules in S32K1 familiy */
 #if defined(MCU_S32K116) || defined(MCU_S32K118) || defined(MCU_S32K142) || defined(MCU_S32K144)
 	#define TARGET_S32K_CAN_FD_COUNT	(1u)
 #elif defined(MCU_S32K146)
