@@ -264,7 +264,7 @@ public:
 		if(!S32K_InterfaceManager::frame_ISRbuffer.empty())
 		{
 			/* Get the front element of the queue buffer */
-			out_frames[1] = FS32K_InterfaceManager::frame_ISRbuffer.front();
+			out_frames[1] = S32K_InterfaceManager::frame_ISRbuffer.front();
 
 			/* Pop the front element of the queue buffer */
 			S32K_InterfaceManager::frame_ISRbuffer.pop_front();
