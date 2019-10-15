@@ -269,6 +269,9 @@ public:
 			/* Pop the front element of the queue buffer */
 			S32K_InterfaceManager::frame_ISRbuffer.pop_front();
 
+			/* Decrease frame count */
+			RX_ISRframeCount--;
+
 			/* Default minimal RX number of frames read */
 			out_frames_read = MaxRxFrames;
 
