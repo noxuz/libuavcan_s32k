@@ -63,6 +63,7 @@
 /* libuavcan core header files */
 #include "libuavcan/media/can.hpp"
 #include "libuavcan/media/interfaces.hpp"
+#include "libuavcan/platform/memory.hpp"
 
 /* STL queue for the intermediate ISR buffer */
 #include <deque>
