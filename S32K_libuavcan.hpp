@@ -101,11 +101,11 @@ static volatile std::fast8_t RX_ISRframeCount = 0;
 class S32K_InterfaceGroup : public InterfaceGroup< CAN::Frame< CAN::TypeFD::MaxFrameSizeBytes> >{
 private:
 
-	/* libuavcan constants for S32K driver layer */
-	constexpr std::uint_fast8_t MB_SIZE_WORDS       = 18u; /* Size in words (4 bytes) of the offset between message buffers */
-	constexpr std::uint_fast8_t MB_DATA_OFFSET      = 2u;  /* Offset in words for reaching the payload of a message buffer */
-	constexpr std::uint_fast8_t	S32K_FILTER_COUNT	= 5u;  /* Number of filters supported by a single FlexCAN instace */
-	constexpr std::uint_fast8_t S32K_CANFD_COUNT 	= TARGET_S32K_CAN_FD_COUNT; /* Defined at precompilation by included target MCU header */
+	/* libuavcan constants for S32K driver layer in current class */
+	constexpr static std::uint_fast8_t MB_SIZE_WORDS        = 18u; /* Size in words (4 bytes) of the offset between message buffers */
+	constexpr static std::uint_fast8_t MB_DATA_OFFSET       = 2u;  /* Offset in words for reaching the payload of a message buffer */
+	constexpr static std::uint_fast8_t S32K_FILTER_COUNT	= 5u;  /* Number of filters supported by a single FlexCAN instace */
+	constexpr static std::uint_fast8_t S32K_CANFD_COUNT 	= TARGET_S32K_CAN_FD_COUNT; /* Defined at precompilation by included target MCU header */
 
 public:
 
@@ -419,12 +419,17 @@ public:
  */
 class S32K_InterfaceManager : public InterfaceManager< S32K_InterfaceGroup, S32K_InterfaceGroup* >{
 private:
+
 	/* Object member created from manager instantiation */
 	InterfaceGroupType S32K_InterfaceGroupObj;
 
-	/* Intermediate RX buffer for ISR reception */
-	static std::deque<CAN::Frame> frame_ISRbuffer;
+	/* Frame capacity for the intermediate ISR buffer */
+	constexpr static std::size_t S32K_FRAME_CAPACITY  = 500;
+
 public:
+
+	/* Intermediate RX buffer for ISR reception with static memory pool */
+	static std::deque<FrameType, platform::PoolAllocator< S32K_FRAME_CAPACITY, sizeof(FrameType)> > frame_ISRbuffer;
 
 	/* Initializes the peripherals needed for libuavcan driver layer */
 	virtual libuavcan::Result startInterfaceGroup(const typename InterfaceGroupType::FrameType::Filter* filter_config,
