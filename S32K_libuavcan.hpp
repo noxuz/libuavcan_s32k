@@ -83,12 +83,6 @@ namespace libuavcan
 namespace media
 {
 
-/* Maximun capacity of intermediate frames */
-static constexpr std::uint32_t Frame_Capactiy = 500u;
-
-/* Counter for number of frames received */
-static volatile std::fast8_t RX_ISRframeCount = 0;
-
 /**
  * S32K CanFD driver layer InterfaceGroup
  * Class instantiation with the next template parameters:
@@ -104,7 +98,6 @@ private:
 	/* libuavcan constants for S32K driver layer in current class */
 	constexpr static std::uint_fast8_t MB_SIZE_WORDS        = 18u; /* Size in words (4 bytes) of the offset between message buffers */
 	constexpr static std::uint_fast8_t MB_DATA_OFFSET       = 2u;  /* Offset in words for reaching the payload of a message buffer */
-	constexpr static std::uint_fast8_t S32K_FILTER_COUNT	= 5u;  /* Number of filters supported by a single FlexCAN instace */
 	constexpr static std::uint_fast8_t S32K_CANFD_COUNT 	= TARGET_S32K_CAN_FD_COUNT; /* Defined at precompilation by included target MCU header */
 
 public:
@@ -357,8 +350,8 @@ public:
 	virtual libuavcan::Result select(libuavcan::duration::Monotonic timeout, bool ignore_write_available) override
 	{
 		/* Obtain timeout from object */
-		constexpr uint32_t cycles_timeout = static_cast<std::uint32_t>(timeout.toMicrosecond());
-		volatile  uint32_t delta          = 0; /* Declaration of delta for comparision */
+		constexpr std::uint32_t cycles_timeout = static_cast<std::uint32_t>(timeout.toMicrosecond());
+		volatile  std::uint32_t delta          = 0; /* Declaration of delta for comparision */
 
 		/* Disable LPIT channel 3 for loading */
 		LPIT0->CLRTEN |= LPIT_CLRTEN_CLR_T_EN_3(1);
@@ -423,10 +416,13 @@ private:
 	/* Object member created from manager instantiation */
 	InterfaceGroupType S32K_InterfaceGroupObj;
 
-	/* Frame capacity for the intermediate ISR buffer */
-	constexpr static std::size_t S32K_FRAME_CAPACITY  = 500;
+	/* Number of filters supported by a single FlexCAN instace */
+	constexpr static std::uint_fast8_t S32K_FILTER_COUNT	= 5u;
 
 public:
+
+	/* Frame capacity for the intermediate ISR buffer */
+	constexpr static std::size_t S32K_FRAME_CAPACITY  = 500;
 
 	/* Intermediate RX buffer for ISR reception with static memory pool */
 	static std::deque<FrameType, platform::PoolAllocator< S32K_FRAME_CAPACITY, sizeof(FrameType)> > frame_ISRbuffer;
@@ -529,6 +525,7 @@ public:
 		/**
 		 * FlexCAN instances initialization
 		 */
+		for
 		PCC->PCCn[PCC_FlexCAN0_INDEX] = PCC_PCCn_CGC_MASK; /* FlexCAN0 clock gating */
 		CAN0->MCR   |=  CAN_MCR_MDIS_MASK;				   /* Disable FlexCAN0 module for clock source selection */
 		CAN0->CTRL1 |=  CAN_CTRL1_CLKSRC_MASK;			   /* Select SYS_CLK as source (80Mhz)*/
@@ -680,8 +677,8 @@ public:
 	 */
 	libuavcan::Result flagPollTimeout_Set(volatile uint32_t &flagRegister, uint32_t flag_Mask) const
 	{
-		constexpr uint32_t cycles_timeout = 0xFFFFF; /* Timeout of 1/(1Mhz) * 2^20 = 1.04 seconds approx */
-		volatile  uint32_t delta          = 0; 		 /* Declaration of delta for comparision */
+		constexpr std::uint32_t cycles_timeout = 0xFFFFF; /* Timeout of 1/(1Mhz) * 2^20 = 1.04 seconds approx */
+		volatile  std::uint32_t delta          = 0; 		 /* Declaration of delta for comparision */
 
 		/* Disable LPIT channel 3 for loading */
 		LPIT0->CLRTEN |= LPIT_CLRTEN_CLR_T_EN_3(1);
@@ -721,8 +718,8 @@ public:
 	 */
 	libuavcan::Result flagPollTimeout_Clear(volatile uint32_t &flagRegister, uint32_t flag_Mask) const
 	{
-		constexpr uint32_t cycles_timeout = 0xFFFFF; /* Timeout of 1/(1Mhz) * 2^20 = 1.04 seconds approx */
-		volatile  uint32_t delta          = 0; 		 /* Declaration of delta for comparision */
+		constexpr std::uint32_t cycles_timeout = 0xFFFFF; /* Timeout of 1/(1Mhz) * 2^20 = 1.04 seconds approx */
+		volatile  std::uint32_t delta          = 0; 		 /* Declaration of delta for comparision */
 
 		/* Disable LPIT channel 3 for loading */
 		LPIT0->CLRTEN |= LPIT_CLRTEN_CLR_T_EN_3(1);
@@ -763,7 +760,7 @@ void CAN0_ORed_0_15_MB_IRQHandler(void)
 {
 
 	/* Before anything, get a timestamp  */
-	libuavcan::time::Monotonic timestamp_ISR = (uint64_t)( ( (uint64_t)(0xFFFFFFFF - LPIT0->TMR[1].CVAL) << 32)  | (  0xFFFFFFFF - LPIT0->TMR[0].CVAL ));
+	libuavcan::time::Monotonic timestamp_ISR = static_cast<std::uint64_t>( ( static_cast<std::uint64_t>(0xFFFFFFFF - LPIT0->TMR[1].CVAL) << 32)  | (  0xFFFFFFFF - LPIT0->TMR[0].CVAL ));
 
 	/* Initialize variable for finding which MB received */
 	std::uint8_t MB_index = 0;
@@ -782,11 +779,8 @@ void CAN0_ORed_0_15_MB_IRQHandler(void)
 			MB_index = 6;
 
 	/* Receive a frame only if the buffer its under its capacity */
-	if (RX_ISRframeCount <= Frame_Capactiy )
+	if (frame_ISRbuffer.get_allocator().max_size() <= S32K_Interface_Manager::S32K_FRAME_CAPACITY )
 	{
-		/* Increase frame count */
-		RX_ISRframeCount++;
-
 		/* Parse the Message buffer, read of the Control and status register locks the MB */
 
 		/* Get dlc and convert to data length in bytes */
@@ -819,7 +813,7 @@ void CAN0_ORed_0_15_MB_IRQHandler(void)
 	}
 
 	/* Unlock the MB by reading the timer register */
-	(std::void)(CAN0->TIMER);
+	static_cast<void>(CAN0->TIMER);
 
 	/* Clear MB interrupt flag (write 1 to clear)*/
 	CAN0->IFLAG1 |= (1<<MB_index);
