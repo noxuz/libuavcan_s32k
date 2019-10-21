@@ -102,6 +102,9 @@ private:
 
 public:
 
+	/* Array of FlexCAN instances for dereferencing from */
+	constexpr static CAN_Type * CAN[] = CAN_BASE_PTRS;
+
 	/**
 	 *  Get the number of CAN-FD capable FlexCAN modules in MCU
 	 */
@@ -357,7 +360,7 @@ public:
 		LPIT0->CLRTEN |= LPIT_CLRTEN_CLR_T_EN_3(1);
 
 		/* Load LPIT with its maximum value */
-		LPIT0->TMR[3].TVAL = LPIT_TMR_CVAL_TMR_CUR_VAL_MAS;
+		LPIT0->TMR[3].TVAL = LPIT_TMR_CVAL_TMR_CUR_VAL_MASK;
 
 		/* Enable LPIT channel 3 for timeout start */
 		LPIT0->SETTEN |= LPIT_SETTEN_SET_T_EN_3(1);
@@ -418,6 +421,8 @@ private:
 
 	/* Number of filters supported by a single FlexCAN instace */
 	constexpr static std::uint_fast8_t S32K_FILTER_COUNT	= 5u;
+	/* Lookup table for FlexCAN indices in PCC register */
+	constexpr static std::uint_fast8_t PCC_FlexCAN_index[] = {36u, 37u, 43u};
 
 public:
 
@@ -525,27 +530,28 @@ public:
 		/**
 		 * FlexCAN instances initialization
 		 */
-		for
-		PCC->PCCn[PCC_FlexCAN0_INDEX] = PCC_PCCn_CGC_MASK; /* FlexCAN0 clock gating */
-		CAN0->MCR   |=  CAN_MCR_MDIS_MASK;				   /* Disable FlexCAN0 module for clock source selection */
-		CAN0->CTRL1 |=  CAN_CTRL1_CLKSRC_MASK;			   /* Select SYS_CLK as source (80Mhz)*/
-		CAN0->MCR 	&= ~CAN_MCR_MDIS_MASK;				   /* Enable FlexCAN0 and automatic transition to freeze mode for setup */
+		for(std::uint_fast8_t i = 0; i < getInterfaceCount() ; i++)
+		{
+		PCC->PCCn[ PCC_FlexCAN_index[i] ] = PCC_PCCn_CGC_MASK; /* FlexCAN0 clock gating */
+		CAN[i]->MCR   |=  CAN_MCR_MDIS_MASK;				   /* Disable FlexCAN0 module for clock source selection */
+		CAN[i]->CTRL1 |=  CAN_CTRL1_CLKSRC_MASK;			   /* Select SYS_CLK as source (80Mhz)*/
+		CAN[i]->MCR 	&= ~CAN_MCR_MDIS_MASK;				   /* Enable FlexCAN and automatic transition to freeze mode for setup */
 
 		/* Block for freeze mode entry */
 		if ( isSuccess(Status) )
 		{
-		Status = flagPollTimeout_Set(CAN0->MCR,CAN_MCR_FRZACK_MASK);
+		Status = flagPollTimeout_Set(CAN[i]->MCR,CAN_MCR_FRZACK_MASK);
 		}
 
 		/* Next configurations are only permitted in freeze mode */
-		CAN0->MCR	|= CAN_MCR_FDEN_MASK  | 	  /* Habilitate CANFD feature */
+		CAN[i]->MCR	|= CAN_MCR_FDEN_MASK  | 	  /* Habilitate CANFD feature */
 					   CAN_MCR_FRZ_MASK;		  /* Enable freeze mode entry when HALT bit is asserted */
-		CAN0->CTRL2 |= CAN_CTRL2_ISOCANFDEN_MASK; /* Activate the use of ISO 11898-1 CAN-FD standard */
+		CAN[i]->CTRL2 |= CAN_CTRL2_ISOCANFDEN_MASK; /* Activate the use of ISO 11898-1 CAN-FD standard */
 
 		/* CAN Bit Timing (CBT) configuration for a nominal phase of 1 Mbit/s with 80 time quantas,
 		   in accordance with Bosch 2012 specification, sample point at 83.75% */
 
-		CAN0->CBT	|= CAN_CBT_BTF_MASK     |	 /* Enable extended bit timing configurations for CAN-FD
+		CAN[i]->CBT	|= CAN_CBT_BTF_MASK     |	 /* Enable extended bit timing configurations for CAN-FD
 		 	 	 	 	 	 	 	 	 	 	    for setting up separetely nominal and data phase */
 					   CAN_CBT_EPRESDIV(0)  |	 /* Prescaler divisor factor of 1 */
 					   CAN_CBT_EPROPSEG(46) |	 /* Propagation segment of 47 time quantas */
@@ -558,14 +564,14 @@ public:
 		/* CAN-FD Bit Timing (FDCBT) for a data phase of 4 Mbit/s with 20 time quantas,
 		   in accordance with Bosch 2012 specification, sample point at 75% */
 
-		CAN0->FDCBT |= CAN_FDCBT_FPRESDIV(0) |  /* Prescaler divisor factor of 1 */
+		CAN[i]->FDCBT |= CAN_FDCBT_FPRESDIV(0) |  /* Prescaler divisor factor of 1 */
 					   CAN_FDCBT_FPROPSEG(7) |  /* Propagation semgment of 7 time quantas (only register that doesn't add 1) */
 					   CAN_FDCBT_FPSEG1(6)	 |  /* Phase buffer segment 1 of 7 time quantas */
 					   CAN_FDCBT_FPSEG2(4)   |  /* Phase buffer segment 2 of 5 time quantas */
 					   CAN_FDCBT_FRJW(4);       /* Resynchorinzation jump width same as PSEG2 */
 
 		/* Additional CAN-FD configurations */
-		CAN0->FDCTRL |= CAN_FDCTRL_FDRATE_MASK | /* Enable bit rate switch in data phase of frame */
+		CAN[i]->FDCTRL |= CAN_FDCTRL_FDRATE_MASK | /* Enable bit rate switch in data phase of frame */
 						CAN_FDCTRL_TDCEN_MASK  | /* Enable transceiver delay compensation */
 						CAN_FDCTRL_TDCOFF(5)   | /* Setup 5 FlexCAN clock cycles for delay compensation in data phase sampling */
 						CAN_FDCTRL_MBDSR0(3);    /* Setup 64 bytes per message buffer for a maximum of 7 MB's */
@@ -574,21 +580,21 @@ public:
 		 * so they must be explicitly initialized, they total 128 slots of 4 words each, which sum to 512 bytes,
 		 * each MB is 72 byte in size ( 64 payload and 8 for headers )
 		 */
-		for(std::uint_fast8_t i = 0; i<CAN_RAMn_COUNT; i++ )
+		for(std::uint_fast8_t j = 0; j<CAN_RAMn_COUNT; j++ )
 		{
-			CAN0->RAMn[i] = 0;
+			CAN[i]->RAMn[j] = 0;
 		}
 
 		/* Setup maximum number of message buffers as 7, 0th and 1st for transmission and 2nd-7th for reception */
-		CAN0->MCR |= CAN_MCR_MAXMB(6)    |
+		CAN[i]->MCR |= CAN_MCR_MAXMB(6)    |
 					 CAN_MCR_SRXDIS_MASK | /* Disable self-reception of frames if ID matches */
 					 CAN_MCR_IRMQ_MASK;	   /* Enable individual message buffer masking */
 
 		/* Setup Message buffers 2-7 for reception and set filters */
-		for( std::uint_fast8_t i = 0; i < filter_config_length; i++ )
+		for( j = 0; j < filter_config_length; j++ )
 		{
 			/* Setup reception MB's mask from input argument */
-			CAN0->RXIMR[i+2] = filter_config[i]->mask;
+			CAN[i]->RXIMR[j+2] = filter_config[j]->mask;
 
 			/* Setup word 0 (4 Bytes) for ith MB
 			 * Extended Data Length      (EDL) = 1
@@ -601,34 +607,39 @@ public:
 			 * Data Length Code			 (DLC) = 0 ( Valid for transmission only )
 			 * Counter Time Stamp (TIME STAMP) = 0 ( Handled by hardware )
 			 */
-			CAN0->RAMn[(i+2)*MB_SIZE_WORDS] = CAN_RAMn_DATA_BYTE_0(0xC4) |
+			CAN[i]->RAMn[(j+2)*MB_SIZE_WORDS] = CAN_RAMn_DATA_BYTE_0(0xC4) |
 											  CAN_RAMn_DATA_BYTE_1(0x20);
 
 			/* Setup Message buffers 2-7 29-bit extended ID from parameter */
-			CAN0->RAMn[(i+2)*MB_SIZE_WORDS + 1] = filter_config[i]->id;
+			CAN[i]->RAMn[(j+2)*MB_SIZE_WORDS + 1] = filter_config[j]->id;
 		}
 
-		/* Enable interrupt in NVIC for FlexCAN0 reception with default priority (ID = 81) */
+		/* Enable interrupt in NVIC for FlexCAN reception with default priority (ID = 81) */
 		S32_NVIC->ISER[2] = 0x20000;
+
+		/* manejar caso especial de los k11x */
 		//S32_NVIC->ISER[2] = 0x1000000; // FLEXCAN1 ID = 88
+		//S32_NVIC->ISER[2] = 0x80000000; // FLEXCAN2 ID = 95
 
 	    /* Enable interrupts of reception MB's (0b1111100) */
-		CAN0->IMASK1 = CAN_IMASK1_BUF31TO0M(124);
+		CAN[i]->IMASK1 = CAN_IMASK1_BUF31TO0M(124);
 
 
 		/* Exit from freeze mode */
-		CAN->MCR &= ~CAN_MCR_HALT_MASK;
+		CAN[i]->MCR &= ~CAN_MCR_HALT_MASK;
 
 		/* Block for freeze mode exit */
 		if ( isSuccess(Status) )
 		{
-		Status = flagPollTimeout_Clear(CAN0->MCR,CAN_MCR_FRZACK_MASK);
+		Status = flagPollTimeout_Clear(CAN[i]->MCR,CAN_MCR_FRZACK_MASK);
 		}
 
 		/* Block until module is ready */
 		if ( isSuccess(Status) )
 		{
-		Status = flagPollTimeout_Clear(CAN0->MCR,CAN_MCR_NOTRDY_MASK);
+		Status = flagPollTimeout_Clear(CAN[i]->MCR,CAN_MCR_NOTRDY_MASK);
+		}
+
 		}
 
 		/* If function ended successfully, return address of private object member */
@@ -684,7 +695,7 @@ public:
 		LPIT0->CLRTEN |= LPIT_CLRTEN_CLR_T_EN_3(1);
 
 		/* Load LPIT with its maximum value */
-		LPIT0->TMR[3].TVAL = LPIT_TMR_CVAL_TMR_CUR_VAL_MAS;
+		LPIT0->TMR[3].TVAL = LPIT_TMR_CVAL_TMR_CUR_VAL_MASK;
 
 		/* Enable LPIT channel 3 for timeout start */
 		LPIT0->SETTEN |= LPIT_SETTEN_SET_T_EN_3(1);
@@ -725,7 +736,7 @@ public:
 		LPIT0->CLRTEN |= LPIT_CLRTEN_CLR_T_EN_3(1);
 
 		/* Load LPIT with its maximum value */
-		LPIT0->TMR[3].TVAL = LPIT_TMR_CVAL_TMR_CUR_VAL_MAS;
+		LPIT0->TMR[3].TVAL = LPIT_TMR_CVAL_TMR_CUR_VAL_MASK;
 
 		/* Enable LPIT channel 3 for timeout start */
 		LPIT0->SETTEN |= LPIT_SETTEN_SET_T_EN_3(1);
