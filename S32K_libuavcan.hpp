@@ -114,7 +114,7 @@ public:
 	}
 
 	/* Function for sending a frame through FLEXCAN, current implementation supports
-	 * MaxTxFrames = 1 so frames_len must be 1
+	 * MaxTxFrames = 1, thus, frames_len must be 1
 	 */
 	virtual libuavcan::Result write(std::uint_fast8_t interface_index,
 	                                    const FrameT (&frames)[MaxTxFrames],
@@ -132,14 +132,13 @@ public:
 
 		std::uint32_t CODE_MB0 = ((CAN0->RAMn[0*MB_SIZE_WORDS] & CAN_RAMn_DATA_BYTE_0(0xF)) >> CAN_RAMn_DATA_BYTE_0_SHIFT );
 		std::uint32_t CODE_MB1 = ((CAN0->RAMn[1*MB_SIZE_WORDS] & CAN_RAMn_DATA_BYTE_0(0xF)) >> CAN_RAMn_DATA_BYTE_0_SHIFT );
-		std::uint32_t flag = 0;
+		std::uint8_t flag = 0;
 
 		/* Check if Tx Message buffer status CODE is inactive (0b1000) */
-		if( CODE_MB0 == 0x8 )
+		if( 0x8 == CODE_MB0 )
 		{
 			/* Transmit through MB0 */
 			CAN0->IFLAG1 |= CAN_IFLAG1_BUF0I_MASK; /* Ensure interurpt flag for MB0 is cleared (write to clear register) */
-
 
 			/* Get data length of the frame wished to be written */
 			std::uint_fast8_t payloadLength = frames[0].getDataLength();
@@ -190,7 +189,7 @@ public:
 			/* Turn on flag for not retransmitting on next MB*/
 			flag = 1;
 		}
-		else if ( (CODE_MB1 == 0x8 ) && (flag == 0) )
+		else if ( ( 0x8 == CODE_MB1 ) && !flag )
 		{
 
 			/* Transmit through MB1 */
@@ -200,19 +199,19 @@ public:
 			std::uint_fast8_t payloadLength = frames[0].getDataLength();
 
 			/* Fill up payload from MSB to LSB in function of frame's dlc */
-			for(std::uint8_t i = 0; i < (payloadLength/4); i++)
+			for(std::uint8_t i = 0; i < (payloadLength >> 2); i++)
 			{
 				/* Build up each 32 bit word with 4 indices from frame.data uint8_t array */
-				CAN0->RAMn[1*MB_SIZE_WORDS + MB_DATA_OFFSET + i] = ((std::uint32_t)(frames[0].data[(i*4) + 0] << 24))  |
-													  ((std::uint32_t)(frames[0].data[(i*4) + 1] << 16))  |
-													  ((std::uint32_t)(frames[0].data[(i*4) + 2] << 8))	  |
-													  	  	  	  	  (frames[0].data[(i*4) + 3] << 0);
+				CAN0->RAMn[1*MB_SIZE_WORDS + MB_DATA_OFFSET + i] = (static_cast<std::uint32_t>(frames[0].data[(i << 2) + 0] << 24))  |
+													               (static_cast<std::uint32_t>(frames[0].data[(i << 2) + 1] << 16))  |
+													               (static_cast<std::uint32_t>(frames[0].data[(i << 2) + 2] << 8))	 |
+													  	  	  	  	                          (frames[0].data[(i << 2) + 3] << 0);
 			}
 
 			/* Fill up payload of frame's bytes that dont fill up a 32-bit word, cases of 0,1,2,3,5,6,7 byte data length */
-			for(std::uint8_t i = 0; i < (payloadLength%4) ; i++)
+			for( i = 0; i < (payloadLength & 0x3); i++)
 			{
-				CAN0->RAMn[1*MB_SIZE_WORDS + MB_DATA_OFFSET + (payloadLength/4)] |= (std::uint32_t)(frames[0].data[ ((payloadLength/4) * 4) + i ] << ((3-i)*8) );
+				CAN0->RAMn[1*MB_SIZE_WORDS + MB_DATA_OFFSET + (payloadLength >> 2)] |= static_cast<std::uint32_t>(frames[0].data[ ((payloadLength >> 2) << 2) + i ] << ((3-i) << 3) );
 			}
 
 			/* Fill up frame ID */
@@ -237,7 +236,7 @@ public:
 			Status = libuavcan::Result::Success;
 
 			/* Argument assignment to 1 Frame transmitted successfully */
-			out_frames_written = 1;
+			out_frames_written = 1u;
 
 			/* Ensure the interrupt flag is cleared after a successfull transmission */
 			CAN0->IFLAG1 |= CAN_IFLAG1_BUF4TO1I(1);
@@ -261,13 +260,10 @@ public:
 		if(!S32K_InterfaceManager::frame_ISRbuffer.empty())
 		{
 			/* Get the front element of the queue buffer */
-			out_frames[1] = S32K_InterfaceManager::frame_ISRbuffer.front();
+			out_frames[0] = S32K_InterfaceManager::frame_ISRbuffer.front();
 
 			/* Pop the front element of the queue buffer */
 			S32K_InterfaceManager::frame_ISRbuffer.pop_front();
-
-			/* Decrease frame count */
-			RX_ISRframeCount--;
 
 			/* Default minimal RX number of frames read */
 			out_frames_read = MaxRxFrames;
@@ -379,7 +375,7 @@ public:
 				std::uint32_t flagMB6 = (CAN0->RAMn[6*MB_SIZE_WORDS]) & CAN_RAMn_DATA_BYTE_0(0xF);
 
 				/* Any CODE must be 0 */
-				std::uint32_t flag = (flagMB2 == 0)||(flagMB3 == 0)||(flagMB4 == 0)||(flagMB5 == 0)||(flagMB6 == 0);
+				std::uint32_t flag = !flagMB2 || !flagMB3 || !flagMB4 || !flagMB5 || !flagMB6;
 			}
 
 			/* All MB's CODE get checked for availability */
@@ -580,7 +576,7 @@ public:
 		 * so they must be explicitly initialized, they total 128 slots of 4 words each, which sum to 512 bytes,
 		 * each MB is 72 byte in size ( 64 payload and 8 for headers )
 		 */
-		for(std::uint_fast8_t j = 0; j<CAN_RAMn_COUNT; j++ )
+		for(std::uint_fast8_t j = 0; j < CAN_RAMn_COUNT; j++ )
 		{
 			CAN[i]->RAMn[j] = 0;
 		}
