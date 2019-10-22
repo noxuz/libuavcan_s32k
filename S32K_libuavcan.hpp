@@ -68,13 +68,20 @@
 /* STL queue for the intermediate ISR buffer */
 #include <deque>
 
-/* Macros from MCU header for portability in the CAN-FD enabled FlexCAN modules in S32K1 familiy */
+/* Macro from MCU header for portability in the CAN-FD enabled FlexCAN modules in S32K1 familiy */
 #if defined(MCU_S32K116) || defined(MCU_S32K118) || defined(MCU_S32K142) || defined(MCU_S32K144)
 	#define TARGET_S32K_CAN_FD_COUNT	(1u)
 #elif defined(MCU_S32K146)
 	#define TARGET_S32K_CAN_FD_COUNT	(2u)
 #elif defined(MCU_S32K148)
 	#define TARGET_S32K_CAN_FD_COUNT	(3u)
+#endif
+
+/* Macro array for portable FlexCAN NVIC initialization */
+#if defined(MCU_S32K116) || defined(MCU_S32K118)
+	#define TARGET_S32K_FLEXCAN_NVIC_INDICES	{{0u,0x800}}
+#else
+	#define TARGET_S32K_FLEXCAN_NVIC_INDICES	{{2u,0x20000},{2u,0x1000000},{2u,0x80000000}}
 #endif
 
 
@@ -426,8 +433,11 @@ private:
 	/* Lookup table for FlexCAN indices in PCC register */
 	constexpr static std::uint_fast8_t PCC_FlexCAN_index[] = {36u, 37u, 43u};
 
+	/* Lookup table for NVIC IRQ numbers for each FlexCAN instance */
+	constexpr static std::uint32_t S32K_FLEXCAN_NVIC_INDICES[][2u] = TARGET_S32K_FLEXCAN_NVIC_INDICES;
+
 	/* Frame capacity for the intermediate ISR buffer */
-	constexpr static std::size_t S32K_FRAME_CAPACITY  = 500;
+	constexpr static std::size_t S32K_FRAME_CAPACITY  = 500u;
 
 public:
 
@@ -614,15 +624,10 @@ public:
 		}
 
 		/* Enable interrupt in NVIC for FlexCAN reception with default priority (ID = 81) */
-		S32_NVIC->ISER[2] = 0x20000;
-
-		/* manejar caso especial de los k11x */
-		//S32_NVIC->ISER[2] = 0x1000000; // FLEXCAN1 ID = 88
-		//S32_NVIC->ISER[2] = 0x80000000; // FLEXCAN2 ID = 95
+		S32_NVIC->ISER[ S32K_FLEXCAN_NVIC_INDICES[i][0] ] = S32K_FLEXCAN_NVIC_INDICES[i][1];
 
 	    /* Enable interrupts of reception MB's (0b1111100) */
 		CAN[i]->IMASK1 = CAN_IMASK1_BUF31TO0M(124);
-
 
 		/* Exit from freeze mode */
 		CAN[i]->MCR &= ~CAN_MCR_HALT_MASK;
@@ -832,14 +837,14 @@ public:
 void CAN0_ORed_0_15_MB_IRQHandler()
 {
 	/* Callback the static RX Interrupt Service Routine */
-	libuavcan::media::S32K_InterfaceManager::S32K_libuavcan_ISR(0);
+	libuavcan::media::S32K_InterfaceManager::S32K_libuavcan_ISR(0u);
 }
 
 #if defined(MCU_S32K146) || defined(MCU_S32K148)
 	/* ISR for FlexCAN1 successful reception)
 	{
 		/* Callback the static RX Interrupt Service Routine */
-		libuavcan::media::S32K_InterfaceManager::S32K_libuavcan_ISR(1);
+		libuavcan::media::S32K_InterfaceManager::S32K_libuavcan_ISR(1u);
 	}
 #endif
 
@@ -848,7 +853,7 @@ void CAN0_ORed_0_15_MB_IRQHandler()
 	void CAN2_ORed_0_15_MB_IRQHandler()
 	{
 		/* Callback the static RX Interrupt Service Routine */
-		libuavcan::media::S32K_InterfaceManager::S32K_libuavcan_ISR(2);
+		libuavcan::media::S32K_InterfaceManager::S32K_libuavcan_ISR(2u);
 	}
 #endif
 
