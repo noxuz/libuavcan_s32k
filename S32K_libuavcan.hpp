@@ -51,8 +51,6 @@
  *	LPIT source = SOSCDIV2 (1Mhz)
  *	FlexCAN source = SYS_CLK (80Mhz)
  *
- *	FlexCAN interrupt priority Is
- *
  *	Async dividers not mentioned are left unset and SCG registers are locked
  */
 
