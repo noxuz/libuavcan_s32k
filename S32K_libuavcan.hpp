@@ -420,13 +420,13 @@ private:
 	/* Lookup table for FlexCAN indices in PCC register */
 	constexpr static std::uint_fast8_t PCC_FlexCAN_index[] = {36u, 37u, 43u};
 
-public:
-
 	/* Frame capacity for the intermediate ISR buffer */
 	constexpr static std::size_t S32K_FRAME_CAPACITY  = 500;
 
 	/* Intermediate RX buffer for ISR reception with static memory pool */
 	static std::deque<FrameType, platform::PoolAllocator< S32K_FRAME_CAPACITY, sizeof(FrameType)> > frame_ISRbuffer;
+
+public:
 
 	/* Initializes the peripherals needed for libuavcan driver layer */
 	virtual libuavcan::Result startInterfaceGroup(const typename InterfaceGroupType::FrameType::Filter* filter_config,
@@ -674,6 +674,69 @@ public:
 	}
 
 
+	/* FlexCAN ISR for frame reception */
+	static void S32K_libuavcan_ISR(std::uint8_t instance)
+	{
+		/* Before anything, get a timestamp  */
+		libuavcan::time::Monotonic timestamp_ISR = static_cast<std::uint64_t>( ( static_cast<std::uint64_t>(0xFFFFFFFF - LPIT0->TMR[1].CVAL) << 32)  | (  0xFFFFFFFF - LPIT0->TMR[0].CVAL ));
+
+		/* Initialize variable for finding which MB received */
+		std::uint8_t MB_index = 0;
+
+		/* Check which MB caused the interrupt */
+		switch( CAN[instance]->IFLAG1 )
+			case 0x4:
+				MB_index = 2;
+			case 0x8:
+				MB_index = 3;
+			case 0x10:
+				MB_index = 4;
+			case 0x20:
+				MB_index = 5;
+			case 0x40:
+				MB_index = 6;
+
+		/* Receive a frame only if the buffer its under its capacity */
+		if (frame_ISRbuffer.get_allocator().max_size() <= S32K_FRAME_CAPACITY )
+		{
+			/* Parse the Message buffer, read of the Control and status register locks the MB */
+
+			/* Get dlc and convert to data length in bytes */
+			CAN::FrameDLC dlc_ISR = ((CAN[instance]->RAMn[MB_index*MB_SIZE_WORDS + 0]) & CAN_WMBn_CS_DLC_MASK ) >> CAN_WMBn_CS_DLC_SHIFT;
+			std::uint_fast8_t payloadLength_ISR = CAN::dlcToLength(dlc_ISR);
+
+			/* Get the id */
+			std::uint32_t id_ISR = (CAN[instance]->RAMn[MB_index*MB_SIZE_WORDS + 1]) & CAN_WMBn_ID_ID_MASK;
+
+			/* Array for parsing from native uint32_t to uint8_t */
+			std::uint8_t data_ISR_byte[payloadLength_ISR];
+
+			/* Parse the full words of the MB in bytes */
+			for(std::uint_fast8_t i = 0; i < payloadLength_ISR; i++)
+			{
+				data_ISR_byte[i] = ( CAN[instance]->RAMn[MB_index*MB_SIZE_WORDS + MB_DATA_OFFSET + (i >> 2)] & (0xFF << ((3 - (i & 0x3)) << 3 ) ) ) >> ((3 - i & 0x3) << 3) ;
+			}
+
+			/* Parse remaining bytes that don't complete up to a word if there are */
+			for( i = 0; i < (payloadLength_ISR & 0x3); i++)
+			{
+				data_ISR_byte[ payloadLength_ISR - (payloadLength_ISR & 0x3) + i] = ( CAN[instance]->RAMn[MB_index*MB_SIZE_WORDS + MB_DATA_OFFSET + (payloadLength_ISR >> 2)] & (0xFF << ((3-i) << 3)) ) >> ((3-i) << 3);
+			}
+
+			/* Create Frame object with constructor */
+			CAN::Frame< CAN::TypeFD::MaxFrameSizeBytes> FrameISR(id_ISR,data_ISR_byte,dlc_ISR,timestamp_ISR);
+
+			/* Insert the frame into the queue */
+			frame_ISRbuffer.push_back(FrameISR);
+		}
+
+		/* Unlock the MB by reading the timer register */
+		static_cast<void>(CAN[instance]->TIMER);
+
+		/* Clear MB interrupt flag (write 1 to clear)*/
+		CAN[instance]->IFLAG1 |= (1<<MB_index);
+	}
+
 
 	/**
 	 * Function for block polling a bit flag until its set with a timeout using S32_Systick
@@ -763,68 +826,27 @@ public:
 } /* END namespace libuavcan */
 
 /* ISR for FlexCAN0 successful reception */
-void CAN0_ORed_0_15_MB_IRQHandler(void)
+void CAN0_ORed_0_15_MB_IRQHandler()
 {
-
-	/* Before anything, get a timestamp  */
-	libuavcan::time::Monotonic timestamp_ISR = static_cast<std::uint64_t>( ( static_cast<std::uint64_t>(0xFFFFFFFF - LPIT0->TMR[1].CVAL) << 32)  | (  0xFFFFFFFF - LPIT0->TMR[0].CVAL ));
-
-	/* Initialize variable for finding which MB received */
-	std::uint8_t MB_index = 0;
-
-	/* Check which MB caused the interrupt */
-	switch( CAN0->IFLAG1 )
-		case 0x4:
-			MB_index = 2;
-		case 0x8:
-			MB_index = 3;
-		case 0x10:
-			MB_index = 4;
-		case 0x20:
-			MB_index = 5;
-		case 0x40:
-			MB_index = 6;
-
-	/* Receive a frame only if the buffer its under its capacity */
-	if (frame_ISRbuffer.get_allocator().max_size() <= S32K_Interface_Manager::S32K_FRAME_CAPACITY )
-	{
-		/* Parse the Message buffer, read of the Control and status register locks the MB */
-
-		/* Get dlc and convert to data length in bytes */
-		CAN::FrameDLC dlc_ISR = ((CAN0->RAMn[MB_index*MB_SIZE_WORDS + 0]) & CAN_WMBn_CS_DLC_MASK ) >> CAN_WMBn_CS_DLC_SHIFT;
-		std::uint_fast8_t payloadLength_ISR = CAN::dlcToLength(dlc_ISR);
-
-		/* Get the id */
-		std::uint32_t id_ISR = (CAN0->RAMn[MB_index*MB_SIZE_WORDS + 1]) & CAN_WMBn_ID_ID_MASK;
-
-		/* Array for parsing from native uint32_t to uint8_t */
-		std::uint8_t data_ISR_byte[payloadLength_ISR];
-
-		/* Parse the full words of the MB in bytes */
-		for(std::uint_fast8_t i = 0; i < payloadLength_ISR; i++)
-		{
-			data_ISR_byte[i] = ( CAN0->RAMn[MB_index*MB_SIZE_WORDS + MB_DATA_OFFSET + (i >> 2)] & (0xFF << ((3 - (i & 0x3)) << 3 ) ) ) >> ((3 - i & 0x3) << 3) ;
-		}
-
-		/* Parse remaining bytes that don't complete up to a word if there are */
-		for( i = 0; i < (payloadLength_ISR & 0x3); i++)
-		{
-			data_ISR_byte[ payloadLength_ISR - (payloadLength_ISR & 0x3) + i] = ( CAN0->RAMn[MB_index*MB_SIZE_WORDS + MB_DATA_OFFSET + (payloadLength_ISR >> 2)] & (0xFF << ((3-i) << 3)) ) >> ((3-i) << 3);
-		}
-
-		/* Create Frame object with constructor */
-		CAN::Frame< CAN::TypeFD::MaxFrameSizeBytes> FrameISR(id_ISR,data_ISR_byte,dlc_ISR,timestamp_ISR);
-
-		/* Insert the frame into the queue */
-		S32K_InterfaceManager::frame_ISRbuffer.push_back(FrameISR);
-	}
-
-	/* Unlock the MB by reading the timer register */
-	static_cast<void>(CAN0->TIMER);
-
-	/* Clear MB interrupt flag (write 1 to clear)*/
-	CAN0->IFLAG1 |= (1<<MB_index);
-
+	/* Callback the static RX Interrupt Service Routine */
+	libuavcan::media::S32K_InterfaceManager::S32K_libuavcan_ISR(0);
 }
+
+#if defined(MCU_S32K146) || defined(MCU_S32K148)
+	/* ISR for FlexCAN1 successful rec)
+	{
+		/* Callback the static RX Interrupt Service Routine */
+		libuavcan::media::S32K_InterfaceManager::S32K_libuavcan_ISR(1);
+	}
+#endif
+
+#if defined(MCU_S32K148)
+	/* ISR for FlexCAN2 successful reception */
+	void CAN2_ORed_0_15_MB_IRQHandler()
+	{
+		/* Callback the static RX Interrupt Service Routine */
+		libuavcan::media::S32K_InterfaceManager::S32K_libuavcan_ISR(2);
+	}
+#endif
 
 #endif
