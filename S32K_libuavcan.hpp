@@ -686,7 +686,7 @@ public:
 	 * 		flagRegister: Register where the flag is located
 	 * 		flagMask: Mask to AND'nd with the register for isolating the flag
 	 */
-	libuavcan::Result flagPollTimeout_Set(volatile uint32_t &flagRegister, uint32_t flag_Mask) const
+	libuavcan::Result flagPollTimeout_Set(volatile std::uint32_t &flagRegister, std::uint32_t flag_Mask) const
 	{
 		constexpr std::uint32_t cycles_timeout = 0xFFFFF; /* Timeout of 1/(1Mhz) * 2^20 = 1.04 seconds approx */
 		volatile  std::uint32_t delta          = 0; 		 /* Declaration of delta for comparision */
@@ -727,7 +727,7 @@ public:
 	 * 		flagRegister: Register where the flag is located
 	 * 		flagMask: Mask to AND'nd with the register for isolating the flag
 	 */
-	libuavcan::Result flagPollTimeout_Clear(volatile uint32_t &flagRegister, uint32_t flag_Mask) const
+	libuavcan::Result flagPollTimeout_Clear(volatile std::uint32_t &flagRegister, std::uint32_t flag_Mask) const
 	{
 		constexpr std::uint32_t cycles_timeout = 0xFFFFF; /* Timeout of 1/(1Mhz) * 2^20 = 1.04 seconds approx */
 		volatile  std::uint32_t delta          = 0; 		 /* Declaration of delta for comparision */
@@ -807,13 +807,13 @@ void CAN0_ORed_0_15_MB_IRQHandler(void)
 		/* Parse the full words of the MB in bytes */
 		for(std::uint_fast8_t i = 0; i < payloadLength_ISR; i++)
 		{
-			data_ISR_byte[i] = ( CAN0->RAMn[MB_index*MB_SIZE_WORDS + MB_DATA_OFFSET + i/4] & (0xFF << 8*(3 - i%4) ) ) >> 8*(3 - i%4) ;
+			data_ISR_byte[i] = ( CAN0->RAMn[MB_index*MB_SIZE_WORDS + MB_DATA_OFFSET + (i >> 2)] & (0xFF << ((3 - (i & 0x3)) << 3 ) ) ) >> ((3 - i & 0x3) << 3) ;
 		}
 
 		/* Parse remaining bytes that don't complete up to a word if there are */
-		for(std::uint_fast8_t i = 0; i < (payloadLength_ISR%4); i++)
+		for( i = 0; i < (payloadLength_ISR & 0x3); i++)
 		{
-			data_ISR_byte[ payloadLength_ISR - (payloadLength_ISR%4) + i] = ( CAN0->RAMn[MB_index*MB_SIZE_WORDS + MB_DATA_OFFSET + (payloadLength_ISR/4)] & (0xFF << 8*(3-i)) ) >> 8*(3-i);
+			data_ISR_byte[ payloadLength_ISR - (payloadLength_ISR & 0x3) + i] = ( CAN0->RAMn[MB_index*MB_SIZE_WORDS + MB_DATA_OFFSET + (payloadLength_ISR >> 2)] & (0xFF << ((3-i) << 3)) ) >> ((3-i) << 3);
 		}
 
 		/* Create Frame object with constructor */
