@@ -100,10 +100,15 @@ private:
 	constexpr static std::uint_fast8_t MB_DATA_OFFSET       = 2u;  /* Offset in words for reaching the payload of a message buffer */
 	constexpr static std::uint_fast8_t S32K_CANFD_COUNT 	= TARGET_S32K_CAN_FD_COUNT; /* Defined at precompilation by included target MCU header */
 
-public:
+protected:
+
+	/* Intermediate RX buffer for ISR reception with static memory pool */
+	static std::deque<FrameType, platform::PoolAllocator< S32K_FRAME_CAPACITY, sizeof(FrameType)> > frame_ISRbuffer[getInterfaceCount()];
 
 	/* Array of FlexCAN instances for dereferencing from */
 	constexpr static CAN_Type * CAN[] = CAN_BASE_PTRS;
+
+public:
 
 	/**
 	 *  Get the number of CAN-FD capable FlexCAN modules in MCU
@@ -409,7 +414,7 @@ public:
  * InterfaceGroupT = S32K_InterfaceGroup (previously instantiated class)
  * InterfaceGroupPtrT = S32K_InterfaceGroup* (raw pointer)
  */
-class S32K_InterfaceManager : public InterfaceManager< S32K_InterfaceGroup, S32K_InterfaceGroup* >{
+class S32K_InterfaceManager : private InterfaceManager< S32K_InterfaceGroup, S32K_InterfaceGroup* >{
 private:
 
 	/* Object member created from manager instantiation */
@@ -417,14 +422,12 @@ private:
 
 	/* Number of filters supported by a single FlexCAN instace */
 	constexpr static std::uint_fast8_t S32K_FILTER_COUNT	= 5u;
+
 	/* Lookup table for FlexCAN indices in PCC register */
 	constexpr static std::uint_fast8_t PCC_FlexCAN_index[] = {36u, 37u, 43u};
 
 	/* Frame capacity for the intermediate ISR buffer */
 	constexpr static std::size_t S32K_FRAME_CAPACITY  = 500;
-
-	/* Intermediate RX buffer for ISR reception with static memory pool */
-	static std::deque<FrameType, platform::PoolAllocator< S32K_FRAME_CAPACITY, sizeof(FrameType)> > frame_ISRbuffer;
 
 public:
 
@@ -665,8 +668,8 @@ public:
 		return Status;
 	}
 
-	/* A single UAVCAN node is configured for having a single ID for
-	 * transmission and reception of frames
+	/**
+	 * Return the number of filters the UAVCAN node can support
 	 */
 	virtual std::size_t getMaxFrameFilters() const override
 	{
@@ -697,9 +700,9 @@ public:
 				MB_index = 6;
 
 		/* Receive a frame only if the buffer its under its capacity */
-		if (frame_ISRbuffer.get_allocator().max_size() <= S32K_FRAME_CAPACITY )
+		if (frame_ISRbuffer[instance].get_allocator().max_size() <= S32K_FRAME_CAPACITY )
 		{
-			/* Parse the Message buffer, read of the Control and status register locks the MB */
+			/* Parse the Message buffer, reading the control and status word locks the MB */
 
 			/* Get dlc and convert to data length in bytes */
 			CAN::FrameDLC dlc_ISR = ((CAN[instance]->RAMn[MB_index*MB_SIZE_WORDS + 0]) & CAN_WMBn_CS_DLC_MASK ) >> CAN_WMBn_CS_DLC_SHIFT;
@@ -727,7 +730,7 @@ public:
 			CAN::Frame< CAN::TypeFD::MaxFrameSizeBytes> FrameISR(id_ISR,data_ISR_byte,dlc_ISR,timestamp_ISR);
 
 			/* Insert the frame into the queue */
-			frame_ISRbuffer.push_back(FrameISR);
+			frame_ISRbuffer[instance].push_back(FrameISR);
 		}
 
 		/* Unlock the MB by reading the timer register */
@@ -833,7 +836,7 @@ void CAN0_ORed_0_15_MB_IRQHandler()
 }
 
 #if defined(MCU_S32K146) || defined(MCU_S32K148)
-	/* ISR for FlexCAN1 successful rec)
+	/* ISR for FlexCAN1 successful reception)
 	{
 		/* Callback the static RX Interrupt Service Routine */
 		libuavcan::media::S32K_InterfaceManager::S32K_libuavcan_ISR(1);
