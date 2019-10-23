@@ -407,8 +407,7 @@ public:
 
 		}
 
-		/* If this section is reached, means timeout ocurred
-		 * and return timeout status */
+		/* If this section is reached, means timeout ocurred and return timeout status */
 		return libuavcan::Result::SuccessTimeout;
 
 	}
