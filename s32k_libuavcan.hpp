@@ -113,7 +113,7 @@ protected:
 	constexpr static CAN_Type * CAN[] = CAN_BASE_PTRS;
 	
 	/* Defined at precompilation by included target MCU header */
-	constexpr static std::uint8_t S32K_CANFD_COUNT = TARGET_S32K_CAN_FD_COUNT;
+	constexpr static std::uint_fast8_t S32K_CANFD_COUNT = TARGET_S32K_CAN_FD_COUNT;
 
 public:
 
