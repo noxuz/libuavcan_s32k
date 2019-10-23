@@ -103,7 +103,6 @@ private:
 	/* libuavcan constants for S32K driver layer in current class */
 	constexpr static std::uint_fast8_t MB_SIZE_WORDS        = 18u; /* Size in words (4 bytes) of the offset between message buffers */
 	constexpr static std::uint_fast8_t MB_DATA_OFFSET       = 2u;  /* Offset in words for reaching the payload of a message buffer */
-	constexpr static std::uint_fast8_t S32K_CANFD_COUNT 	= TARGET_S32K_CAN_FD_COUNT; /* Defined at precompilation by included target MCU header */
 
 protected:
 
@@ -112,6 +111,9 @@ protected:
 
 	/* Array of FlexCAN instances for dereferencing from */
 	constexpr static CAN_Type * CAN[] = CAN_BASE_PTRS;
+	
+	/* Defined at precompilation by included target MCU header */
+	constexpr static std::uint_fast8_t S32K_CANFD_COUNT = TARGET_S32K_CAN_FD_COUNT; 
 
 public:
 
@@ -537,7 +539,7 @@ public:
 		/**
 		 * FlexCAN instances initialization
 		 */
-		for(std::uint_fast8_t i = 0; i < getInterfaceCount() ; i++)
+		for(std::uint_fast8_t i = 0; i < S32K_CANFD_COUNT ; i++)
 		{
 		PCC->PCCn[ PCC_FlexCAN_index[i] ] = PCC_PCCn_CGC_MASK; /* FlexCAN0 clock gating */
 		CAN[i]->MCR   |=  CAN_MCR_MDIS_MASK;				   /* Disable FlexCAN0 module for clock source selection */
@@ -839,7 +841,7 @@ void CAN0_ORed_0_15_MB_IRQHandler()
 }
 
 #if defined(MCU_S32K146) || defined(MCU_S32K148)
-	/* ISR for FlexCAN1 successful reception)
+	/* ISR for FlexCAN1 successful reception) */
 	{
 		/* Callback the static RX Interrupt Service Routine */
 		libuavcan::media::S32K_InterfaceManager::S32K_libuavcan_ISR(1u);
