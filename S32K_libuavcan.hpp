@@ -101,8 +101,8 @@ class S32K_InterfaceGroup : public InterfaceGroup< CAN::Frame< CAN::TypeFD::MaxF
 private:
 
 	/* libuavcan constants for S32K driver layer in current class */
-	constexpr static std::uint_fast8_t MB_SIZE_WORDS        = 18u; /* Size in words (4 bytes) of the offset between message buffers */
-	constexpr static std::uint_fast8_t MB_DATA_OFFSET       = 2u;  /* Offset in words for reaching the payload of a message buffer */
+	constexpr static std::uint8_t MB_SIZE_WORDS        = 18u; /* Size in words (4 bytes) of the offset between message buffers */
+	constexpr static std::uint8_t MB_DATA_OFFSET       = 2u;  /* Offset in words for reaching the payload of a message buffer */
 
 protected:
 
@@ -113,7 +113,7 @@ protected:
 	constexpr static CAN_Type * CAN[] = CAN_BASE_PTRS;
 	
 	/* Defined at precompilation by included target MCU header */
-	constexpr static std::uint_fast8_t S32K_CANFD_COUNT = TARGET_S32K_CAN_FD_COUNT; 
+	constexpr static std::uint8_t S32K_CANFD_COUNT = TARGET_S32K_CAN_FD_COUNT;
 
 public:
 
@@ -315,7 +315,7 @@ public:
 			Status = flagPollTimeout_Set(CAN0->MCR,CAN_MCR_FRZACK_MASK);
 		}
 
-		for( std::uint_fast8_t i = 0; i < filter_config_length; i++ )
+		for( std::uint8_t i = 0; i < filter_config_length; i++ )
 		{
 			/* Setup reception MB's mask from input argument */
 			CAN0->RXIMR[i+2] = filter_config[i]->mask;
@@ -428,10 +428,10 @@ private:
 	InterfaceGroupType S32K_InterfaceGroupObj;
 
 	/* Number of filters supported by a single FlexCAN instace */
-	constexpr static std::uint_fast8_t S32K_FILTER_COUNT	= 5u;
+	constexpr static std::uint8_t S32K_FILTER_COUNT	= 5u;
 
 	/* Lookup table for FlexCAN indices in PCC register */
-	constexpr static std::uint_fast8_t PCC_FlexCAN_index[] = {36u, 37u, 43u};
+	constexpr static std::uint8_t PCC_FlexCAN_index[] = {36u, 37u, 43u};
 
 	/* Lookup table for NVIC IRQ numbers for each FlexCAN instance */
 	constexpr static std::uint32_t S32K_FLEXCAN_NVIC_INDICES[][2u] = TARGET_S32K_FLEXCAN_NVIC_INDICES;
@@ -539,7 +539,7 @@ public:
 		/**
 		 * FlexCAN instances initialization
 		 */
-		for(std::uint_fast8_t i = 0; i < S32K_CANFD_COUNT ; i++)
+		for(std::uint8_t i = 0; i < S32K_CANFD_COUNT ; i++)
 		{
 		PCC->PCCn[ PCC_FlexCAN_index[i] ] = PCC_PCCn_CGC_MASK; /* FlexCAN0 clock gating */
 		CAN[i]->MCR   |=  CAN_MCR_MDIS_MASK;				   /* Disable FlexCAN0 module for clock source selection */
@@ -589,7 +589,7 @@ public:
 		 * so they must be explicitly initialized, they total 128 slots of 4 words each, which sum to 512 bytes,
 		 * each MB is 72 byte in size ( 64 payload and 8 for headers )
 		 */
-		for(std::uint_fast8_t j = 0; j < CAN_RAMn_COUNT; j++ )
+		for(std::uint8_t j = 0; j < CAN_RAMn_COUNT; j++ )
 		{
 			CAN[i]->RAMn[j] = 0;
 		}
@@ -720,7 +720,7 @@ public:
 			std::uint8_t data_ISR_byte[payloadLength_ISR];
 
 			/* Parse the full words of the MB in bytes */
-			for(std::uint_fast8_t i = 0; i < payloadLength_ISR; i++)
+			for(std::uint8_t i = 0; i < payloadLength_ISR; i++)
 			{
 				data_ISR_byte[i] = ( CAN[instance]->RAMn[MB_index*MB_SIZE_WORDS + MB_DATA_OFFSET + (i >> 2)] & (0xFF << ((3 - (i & 0x3)) << 3 ) ) ) >> ((3 - i & 0x3) << 3) ;
 			}
