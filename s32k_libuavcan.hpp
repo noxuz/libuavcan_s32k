@@ -736,7 +736,7 @@ public:
 			}
 
 			/* Parse remaining bytes that don't complete up to a word if there are */
-			for( i = 0; i < (payloadLength_ISR & 0x3); i++)
+			for(std::uint8_t i = 0; i < (payloadLength_ISR & 0x3); i++)
 			{
 				data_ISR_byte[ payloadLength_ISR - (payloadLength_ISR & 0x3) + i] = ( CAN[instance]->RAMn[MB_index*MB_SIZE_WORDS + MB_DATA_OFFSET + (payloadLength_ISR >> 2)] & (0xFF << ((3-i) << 3)) ) >> ((3-i) << 3);
 			}
