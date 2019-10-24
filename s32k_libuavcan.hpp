@@ -599,7 +599,7 @@ public:
 					 CAN_MCR_IRMQ_MASK;	   /* Enable individual message buffer masking */
 
 		/* Setup Message buffers 2-7 for reception and set filters */
-		for( j = 0; j < filter_config_length; j++ )
+		for(std::uint8_t j = 0; j < filter_config_length; j++ )
 		{
 			/* Setup reception MB's mask from input argument */
 			CAN[i]->RXIMR[j+2] = filter_config[j]->mask;
@@ -658,15 +658,26 @@ public:
 	virtual libuavcan::Result stopInterfaceGroup(InterfaceGroupPtrType& inout_group) override
 	{
 		/* Default return value status */
-		libuavcan::Result Status = libuavcan::Result::Success;
+		libuavcan::Result Status = libuavcan::Result::Failure;
 
 		/* FlexCAN0 module deinitialization */
-		CAN0->MCR 	    |= CAN_MCR_MDIS_MASK;				         /* Disable FlexCAN0 module */
-		Status = flagPollTimeout_Set(CAN0->MCR,CAN_MCR_LPMACK_MASK); /* Poll for Low Power ACK, waits for current transmission/reception to finish */
-		PCC->PCCn[PCC_FlexCAN0_INDEX] &= ~PCC_PCCn_CGC_MASK; 		 /* Disable FlexCAN0 clock gating */
+		for(std::uint8_t i = 0; i < S32K_CANFD_COUNT ; i++)
+		{
+			/* Disable FlexCAN module */
+			CAN[i]->MCR |= CAN_MCR_MDIS_MASK;
+
+			/* Poll for Low Power ACK, waits for current transmission/reception to finish */
+			Status = flagPollTimeout_Set(CAN[i]->MCR,CAN_MCR_LPMACK_MASK);
+
+			/* Disable FlexCAN clock gating */
+			PCC->PCCn[ PCC_FlexCAN_index[i] ] &= ~PCC_PCCn_CGC_MASK;
+		}
 
 		/* Assign to null the pointer output argument */
 		inout_group = nullptr;
+
+		/* If reached end of section, deinit was succesful */
+		Status = libuavcan::Result:Failure;
 
 		/* Return code for a successful stop of S32K_InterfaceGroup */
 		return Status;
