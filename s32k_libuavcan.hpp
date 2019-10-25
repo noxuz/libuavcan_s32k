@@ -362,7 +362,8 @@ public:
 	{
 		/* Obtain timeout from object */
 		constexpr std::uint32_t cycles_timeout = static_cast<std::uint32_t>(timeout.toMicrosecond());
-		volatile  std::uint32_t delta          = 0; /* Declaration of delta for comparision */
+		/* Initialization of delta variable for comparision */
+		volatile  std::uint32_t delta          = 0;
 
 		/* Disable LPIT channel 3 for loading */
 		LPIT0->CLRTEN |= LPIT_CLRTEN_CLR_T_EN_3(1);
@@ -376,30 +377,35 @@ public:
 		/* Start of timed block */
 		while( delta<cycles_timeout )
 		{
-			/* If ignore = true, check only RX buffers (2th-6th) */
-			if(ignore_write_available)
-			{
-				/* Get CODE from Control and Status word of each MB */
-				std::uint32_t flagMB2 = (CAN0->RAMn[2*MB_SIZE_WORDS]) & CAN_RAMn_DATA_BYTE_0(0xF);
-				std::uint32_t flagMB3 = (CAN0->RAMn[3*MB_SIZE_WORDS]) & CAN_RAMn_DATA_BYTE_0(0xF);
-				std::uint32_t flagMB4 = (CAN0->RAMn[4*MB_SIZE_WORDS]) & CAN_RAMn_DATA_BYTE_0(0xF);
-				std::uint32_t flagMB5 = (CAN0->RAMn[5*MB_SIZE_WORDS]) & CAN_RAMn_DATA_BYTE_0(0xF);
-				std::uint32_t flagMB6 = (CAN0->RAMn[6*MB_SIZE_WORDS]) & CAN_RAMn_DATA_BYTE_0(0xF);
 
-				/* Any CODE must be 0 */
-				std::uint32_t flag = !flagMB2 || !flagMB3 || !flagMB4 || !flagMB5 || !flagMB6;
-			}
-
-			/* All MB's CODE get checked for availability */
-			else
+			for(std::uint8_t i = 0; i < S32K_CANFD_COUNT; i++ )
 			{
-				/* Check inactive message buffer IMB flag, checks code 0 for Rx or 0b1000 for Tx */
-				std::uint32_t flag = (CAN0->ESR2 & CAN_ESR2_IMB_MASK)
-			}
+				/* If ignore = true, check only RX buffers (2th-6th) */
+				if( ignore_write_available )
+				{
+					/* Get CODE from Control and Status word of each MB */
+					std::uint32_t flagMB2 = (FlexCAN[i]->RAMn[2*MB_SIZE_WORDS]) & CAN_RAMn_DATA_BYTE_0(0xF);
+					std::uint32_t flagMB3 = (FlexCAN[i]->RAMn[3*MB_SIZE_WORDS]) & CAN_RAMn_DATA_BYTE_0(0xF);
+					std::uint32_t flagMB4 = (FlexCAN[i]->RAMn[4*MB_SIZE_WORDS]) & CAN_RAMn_DATA_BYTE_0(0xF);
+					std::uint32_t flagMB5 = (FlexCAN[i]->RAMn[5*MB_SIZE_WORDS]) & CAN_RAMn_DATA_BYTE_0(0xF);
+					std::uint32_t flagMB6 = (FlexCAN[i]->RAMn[6*MB_SIZE_WORDS]) & CAN_RAMn_DATA_BYTE_0(0xF);
 
-			if (flag)
-			{
-				return libuavcan::Result::Success;
+					/* Any CODE must be 0 */
+					std::uint32_t flag = !flagMB2 || !flagMB3 || !flagMB4 || !flagMB5 || !flagMB6;
+				}
+
+				/* All MB's CODE get checked for availability if ignore = true */
+				else
+				{
+					/* Check inactive message buffer IMB flag, checks code 0 for Rx or 0b1000 for Tx */
+					std::uint32_t flag = (FlexCAN[i]->ESR2 & CAN_ESR2_IMB_MASK)
+				}
+
+				if ( flag )
+				{
+					return libuavcan::Result::Success;
+				}
+
 			}
 
 			/* Get current value of delta */
@@ -774,7 +780,7 @@ public:
 	libuavcan::Result flagPollTimeout_Set(volatile std::uint32_t &flagRegister, std::uint32_t flag_Mask) const
 	{
 		constexpr std::uint32_t cycles_timeout = 0xFFFFF; /* Timeout of 1/(1Mhz) * 2^20 = 1.04 seconds approx */
-		volatile  std::uint32_t delta          = 0; 		 /* Declaration of delta for comparision */
+		volatile  std::uint32_t delta          = 0; 	  /* Declaration of delta for comparision */
 
 		/* Disable LPIT channel 3 for loading */
 		LPIT0->CLRTEN |= LPIT_CLRTEN_CLR_T_EN_3(1);
@@ -814,8 +820,8 @@ public:
 	 */
 	libuavcan::Result flagPollTimeout_Clear(volatile std::uint32_t &flagRegister, std::uint32_t flag_Mask) const
 	{
-		constexpr std::uint32_t cycles_timeout = 0xFFFFF; /* Timeout of 1/(1Mhz) * 2^20 = 1.04 seconds approx */
-		volatile  std::uint32_t delta          = 0; 		 /* Declaration of delta for comparision */
+		constexpr std::uint32_t cycles_timeout = 0xFFFFF;  /* Timeout of 1/(1Mhz) * 2^20 = 1.04 seconds approx */
+		volatile  std::uint32_t delta          = 0; 	   /* Declaration of delta for comparision */
 
 		/* Disable LPIT channel 3 for loading */
 		LPIT0->CLRTEN |= LPIT_CLRTEN_CLR_T_EN_3(1);
