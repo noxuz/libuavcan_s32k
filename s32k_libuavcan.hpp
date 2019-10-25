@@ -106,15 +106,15 @@ private:
 
 protected:
 
-	/* Intermediate RX buffer for ISR reception with static memory pool */
-	static std::deque<FrameType, platform::PoolAllocator< S32K_FRAME_CAPACITY, sizeof(FrameType)> > frame_ISRbuffer[getInterfaceCount()];
+	/* Defined at precompilation by included target MCU header */
+	constexpr static std::uint_fast8_t S32K_CANFD_COUNT = TARGET_S32K_CAN_FD_COUNT;
+
+	/* Intermediate RX buffer for ISR reception with static memory pool for each instance */
+	static std::deque<FrameType, platform::PoolAllocator< S32K_FRAME_CAPACITY, sizeof(FrameType)> > frame_ISRbuffer[ S32K_CANFD_COUNT ];
 
 	/* Array of FlexCAN instances for dereferencing from */
 	constexpr static CAN_Type * FlexCAN[] = CAN_BASE_PTRS;
 	
-	/* Defined at precompilation by included target MCU header */
-	constexpr static std::uint_fast8_t S32K_CANFD_COUNT = TARGET_S32K_CAN_FD_COUNT;
-
 public:
 
 	/**
@@ -259,29 +259,39 @@ public:
 
     }
 
-	/* Read from the intermediate ISR Frame buffer */
+	/* Read from an intermediate ISR Frame buffer of an FlexCAN instance */
 	virtual libuavcan::Result read(std::uint_fast8_t interface_index,
 	                                   FrameT (&out_frames)[MaxRxFrames],
 	                                   std::size_t& out_frames_read) override
     {
 		/* Initialize return value and out_frames_read output reference value */
-		libuavcan::Result Status = libuav::Result::Failure;
+		libuavcan::Result Status = libuavcan::Result::Success;
 		out_frames_read = 0;
 
-		/* Check if the ISR buffer isn't empty */
-		if(!S32K_InterfaceManager::frame_ISRbuffer.empty())
+		/* Input validation */
+		if( interface_index > S32K_CANFD_COUNT )
 		{
-			/* Get the front element of the queue buffer */
-			out_frames[0] = S32K_InterfaceManager::frame_ISRbuffer.front();
+			Status = libuavcan::Result::BadArgument;
+		}
 
-			/* Pop the front element of the queue buffer */
-			S32K_InterfaceManager::frame_ISRbuffer.pop_front();
+		if( isSuccess(Status) )
+		{
+			/* Check if the ISR buffer isn't empty */
+			if( !frame_ISRbuffer[ interface_index ].empty() )
+			{
+				/* Get the front element of the queue buffer */
+				out_frames[0] = frame_ISRbuffer[ interface_index ].front();
 
-			/* Default minimal RX number of frames read */
-			out_frames_read = MaxRxFrames;
+				/* Pop the front element of the queue buffer */
+				frame_ISRbuffer[ interface_index ].pop_front();
 
-			/* If read is successful, status is success */
-			Status = libuavcan::Result::Success;
+				/* Default minimal RX number of frames read */
+				out_frames_read = MaxRxFrames;
+
+				/* If read is successful, status is success */
+				Status = libuavcan::Result::Success;
+			}
+
 		}
 
 		/* Return status code */
@@ -289,7 +299,8 @@ public:
 
     }
 
-	/* Reconfigure reception filters for dynamic subscription of nodes
+	/**
+	 * Reconfigure reception filters for dynamic subscription of nodes
 	 * NOTE: Since filter Iindex to reconfigure isn't provided, only up
 	 * 		 to which filter to modify, the filters in the range
 	 * 		 (filter_config_length, S32K_FILTER_COUNT] are left unaltered
