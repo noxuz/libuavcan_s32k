@@ -306,51 +306,57 @@ public:
 			Status = libuavcan::Result::BadArgument;
 		}
 
-		/* Enter freeze mode for filter reconfiguration */
-		CAN0->MCR |= CAN_MCR_HALT_MASK;
-
-		/* Block for freeze mode entry, halts any transmission or  */
-		if ( isSuccess(Status) )
+		if( isSuccess(Status) )
 		{
-			Status = flagPollTimeout_Set(CAN0->MCR,CAN_MCR_FRZACK_MASK);
-		}
+			for(std::uint8_t i = 0; i < S32K_CANFD_COUNT; i++)
+			{
+				/* Enter freeze mode for filter reconfiguration */
+				FlexCAN[i]->MCR |= CAN_MCR_HALT_MASK;
 
-		for( std::uint8_t i = 0; i < filter_config_length; i++ )
-		{
-			/* Setup reception MB's mask from input argument */
-			CAN0->RXIMR[i+2] = filter_config[i]->mask;
+				/* Block for freeze mode entry, halts any transmission or  */
+				if ( isSuccess(Status) )
+				{
+					Status = flagPollTimeout_Set(FlexCAN[i]->MCR,CAN_MCR_FRZACK_MASK);
 
-			/* Setup word 0 (4 Bytes) for ith MB
-			 * Extended Data Length      (EDL) = 1
-			 * Bit Rate Switch 		     (BRS) = 1
-			 * Error State Indicator     (ESI) = 0
-			 * Message Buffer Code	    (CODE) = 4 ( Active for reception and empty )
-			 * Substitute Remote Request (SRR) = 0
-			 * ID Extended Bit			 (IDE) = 1
-			 * Remote Tx Request	     (RTR) = 0
-			 * Data Length Code			 (DLC) = 0 ( Valid for transmission only )
-			 * Counter Time Stamp (TIME STAMP) = 0 ( Handled by hardware )
-			 */
-			CAN0->RAMn[(i+2)*MB_SIZE_WORDS] = CAN_RAMn_DATA_BYTE_0(0xC4) |
-											  CAN_RAMn_DATA_BYTE_1(0x20);
+					for( std::uint8_t j = 0; j < filter_config_length; j++ )
+					{
+					 	/* Setup reception MB's mask from input argument */
+						FlexCAN[i]->RXIMR[j+2] = filter_config[j]->mask;
 
-			/* Setup Message buffers 2-7 29-bit extended ID from parameter */
-			CAN0->RAMn[(i+2)*MB_SIZE_WORDS + 1] = filter_config[i]->id;
-		}
+						/* Setup word 0 (4 Bytes) for ith MB
+						 * Extended Data Length      (EDL) = 1
+						 * Bit Rate Switch 		     (BRS) = 1
+						 * Error State Indicator     (ESI) = 0
+						 * Message Buffer Code	    (CODE) = 4 ( Active for reception and empty )
+						 * Substitute Remote Request (SRR) = 0
+						 * ID Extended Bit			 (IDE) = 1
+						 * Remote Tx Request	     (RTR) = 0
+						 * Data Length Code			 (DLC) = 0 ( Valid for transmission only )
+						 * Counter Time Stamp (TIME STAMP) = 0 ( Handled by hardware )
+						 */
+						FlexCAN[i]->RAMn[(j+2)*MB_SIZE_WORDS] = CAN_RAMn_DATA_BYTE_0(0xC4) |
+																CAN_RAMn_DATA_BYTE_1(0x20);
 
-		/* Freeze mode exit request */
-		CAN0->MCR &= ~CAN_MCR_HALT_MASK;
+						/* Setup Message buffers 2-7 29-bit extended ID from parameter */
+						FlexCAN[i]->RAMn[(j+2)*MB_SIZE_WORDS + 1] = filter_config[j]->id;
+					}
 
-		/* Block for freeze mode exit */
-		if ( isSuccess(Status) )
-		{
-		Status = flagPollTimeout_Clear(CAN0->MCR,CAN_MCR_FRZACK_MASK);
-		}
+					/* Freeze mode exit request */
+					FlexCAN[i]->MCR &= ~CAN_MCR_HALT_MASK;
 
-		/* Block until module is ready */
-		if ( isSuccess(Status) )
-		{
-		Status = flagPollTimeout_Clear(CAN0->MCR,CAN_MCR_NOTRDY_MASK);
+					/* Block for freeze mode exit */
+					if ( isSuccess(Status) )
+					{
+						Status = flagPollTimeout_Clear(FlexCAN[i]->MCR,CAN_MCR_FRZACK_MASK);
+
+						/* Block until module is ready */
+						if ( isSuccess(Status) )
+						{
+							Status = flagPollTimeout_Clear(FlexCAN[i]->MCR,CAN_MCR_NOTRDY_MASK);
+						}
+					}
+				}
+			}
 		}
 
 		/* Return status code */
