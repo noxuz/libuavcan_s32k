@@ -129,10 +129,10 @@ public:
 	 * Send a frame through a particular available FlexCAN instance
 	 */
 	virtual libuavcan::Result write(std::uint_fast8_t interface_index,
-	                                    const FrameT  (&frames)[MaxTxFrames],
-	                                    std::size_t   frames_len,
-	                                    std::size_t&  out_frames_written) override
-    {
+	                                     const FrameT (&frames)[MaxTxFrames],
+	                                     std::size_t  frames_len,
+	                                     std::size_t& out_frames_written) override
+    	{
 		/* Initialize return value status */
 		libuavcan::Result Status = libuavcan::Result::Success;
 
@@ -153,7 +153,7 @@ public:
 			if( 0x8 == CODE_MB0 )
 			{
 				/* Transmit through MB0 */
-				FlexCAN[ interface_index-1 ]->IFLAG1 |= CAN_IFLAG1_BUF0I_MASK; /* Ensure interurpt flag for MB0 is cleared (write to clear register) */
+				FlexCAN[ interface_index-1 ]->IFLAG1 |= CAN_IFLAG1_BUF0I_MASK; /* Ensure interrupt flag for MB0 is cleared (write to clear register) */
 
 				/* Get data length of the frame wished to be written */
 				std::uint_fast8_t payloadLength = frames[0].getDataLength();
@@ -261,7 +261,7 @@ public:
 		/* Return status code */
 		return Status;
 
-    }
+    	}
 
 	/**
 	 * Read from an intermediate ISR Frame buffer of an FlexCAN instance
@@ -269,7 +269,7 @@ public:
 	virtual libuavcan::Result read(std::uint_fast8_t interface_index,
 	                                    FrameT       (&out_frames)[MaxRxFrames],
 	                                    std::size_t& out_frames_read) override
-    {
+    	{
 		/* Initialize return value and out_frames_read output reference value */
 		libuavcan::Result Status = libuavcan::Result::Success;
 		out_frames_read = 0;
@@ -303,7 +303,7 @@ public:
 		/* Return status code */
 	    return Status;
 
-    }
+   	 }
 
 	/**
 	 * Reconfigure reception filters for dynamic subscription of nodes
