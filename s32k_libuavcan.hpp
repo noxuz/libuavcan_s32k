@@ -888,6 +888,7 @@ void CAN0_ORed_0_15_MB_IRQHandler()
 }
 
 #if defined(MCU_S32K146) || defined(MCU_S32K148)
+	void CAN1_ORed_0_15_MB_IRQHandler()
 	/* ISR for FlexCAN1 successful reception) */
 	{
 		/* Callback the static RX Interrupt Service Routine */
