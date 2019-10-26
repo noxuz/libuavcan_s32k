@@ -312,7 +312,7 @@ public:
 	 * 		 (filter_config_length, S32K_Filter_Count ] are left unaltered
 	 */
 	virtual libuavcan::Result reconfigureFilters(const typename FrameType::Filter* filter_config,
-	                                                 std::size_t                   filter_config_length) override
+	                                                            std::size_t        filter_config_length) override
 	{
 		/* Initialize return value status */
 		libuavcan::Result Status = libuavcan::Result::Success;
@@ -471,8 +471,8 @@ public:
 
 	/* Initializes the peripherals needed for libuavcan driver layer */
 	virtual libuavcan::Result startInterfaceGroup(const typename InterfaceGroupType::FrameType::Filter* filter_config,
-	                                                  std::size_t            filter_config_length,
-	                                                  InterfaceGroupPtrType& out_group) override
+	                                                  	     std::size_t            		    filter_config_length,
+	                                                             InterfaceGroupPtrType&                 out_group) override
     {
 
 	  /* Initialize return values */
