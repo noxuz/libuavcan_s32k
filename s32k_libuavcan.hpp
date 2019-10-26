@@ -34,24 +34,24 @@
 
 /**
  * Integration Note, this driver utilizes the next modules.
- * 	LPIT: Channels 0,1 and 3
- * 	FlexCAN: All message buffers from each instance.
- * 			 ISR priority not set, thus, it is determined by its position in the vector.
+ * LPIT: Channels 0,1 and 3
+ * FlexCAN: All message buffers from each instance.
+ *          ISR priority not set, thus, it is determined by its position in the vector.
  *
- * 	Sets the MCU clocking in Normal RUN mode with the next prescalers, 8Mhz external crystal is assumed:
- * 	CORE_CLK:  80Mhz
- * 	SYS_CLK:   80Mhz
- * 	BUS_CLK:   40Mhz
- * 	FLASH_CLK: 26.67Mhz
+ * Sets the MCU clocking in Normal RUN mode with the next prescalers, 8Mhz external crystal is assumed:
+ * CORE_CLK:  80Mhz
+ * SYS_CLK:   80Mhz
+ * BUS_CLK:   40Mhz
+ * FLASH_CLK: 26.67Mhz
  *
- *  Dividers:
- *  SIRCDIV2 = 8
- *  SOSCDIV2 = 8
+ * Dividers:
+ * SIRCDIV2 = 8
+ * SOSCDIV2 = 8
  *
- *	LPIT source = SOSCDIV2 (1Mhz)
- *	FlexCAN source = SYS_CLK (80Mhz)
+ * LPIT source = SOSCDIV2 (1Mhz)
+ * FlexCAN source = SYS_CLK (80Mhz)
  *
- *	Asynchronous dividers not mentioned are left unset and SCG registers are locked
+ * Asynchronous dividers not mentioned are left unset and SCG registers are locked
  */
 
 /* Include desired target S32K1xx registers and features header files,
@@ -101,8 +101,8 @@ class S32K_InterfaceGroup : public InterfaceGroup< CAN::Frame< CAN::TypeFD::MaxF
 private:
 
 	/* libuavcan constants for S32K driver layer in current class */
-	constexpr static std::uint8_t MB_Size_Words        = 18u; /* Size in words (4 bytes) of the offset between message buffers */
-	constexpr static std::uint8_t MB_Data_Offset       = 2u;  /* Offset in words for reaching the payload of a message buffer */
+	constexpr static std::uint8_t MB_Size_Words  = 18u; /* Size in words (4 bytes) of the offset between message buffers */
+	constexpr static std::uint8_t MB_Data_Offset = 2u;  /* Offset in words for reaching the payload of a message buffer */
 
 protected:
 
@@ -129,9 +129,9 @@ public:
 	 * Send a frame through a particular available FlexCAN instance
 	 */
 	virtual libuavcan::Result write(std::uint_fast8_t interface_index,
-	                                    const FrameT (&frames)[MaxTxFrames],
-	                                    std::size_t  frames_len,
-	                                    std::size_t& out_frames_written) override
+	                                    const FrameT  (&frames)[MaxTxFrames],
+	                                    std::size_t   frames_len,
+	                                    std::size_t&  out_frames_written) override
     {
 		/* Initialize return value status */
 		libuavcan::Result Status = libuavcan::Result::Success;
@@ -267,8 +267,8 @@ public:
 	 * Read from an intermediate ISR Frame buffer of an FlexCAN instance
 	 */
 	virtual libuavcan::Result read(std::uint_fast8_t interface_index,
-	                                   FrameT (&out_frames)[MaxRxFrames],
-	                                   std::size_t& out_frames_read) override
+	                                    FrameT       (&out_frames)[MaxRxFrames],
+	                                    std::size_t& out_frames_read) override
     {
 		/* Initialize return value and out_frames_read output reference value */
 		libuavcan::Result Status = libuavcan::Result::Success;
@@ -731,7 +731,7 @@ public:
 	static void S32K_libuavcan_ISR(std::uint8_t instance)
 	{
 		/* Before anything, get a timestamp  */
-		libuavcan::time::Monotonic timestamp_ISR = static_cast<std::uint64_t>( ( static_cast<std::uint64_t>(0xFFFFFFFF - LPIT0->TMR[1].CVAL) << 32)  | (  0xFFFFFFFF - LPIT0->TMR[0].CVAL ));
+		libuavcan::time::Monotonic timestamp_ISR = static_cast<std::uint64_t>( ( static_cast<std::uint64_t>(0xFFFFFFFF - LPIT0->TMR[1].CVAL) << 32) | (  0xFFFFFFFF - LPIT0->TMR[0].CVAL ));
 
 		/* Initialize variable for finding which MB received */
 		std::uint8_t MB_index = 0;
