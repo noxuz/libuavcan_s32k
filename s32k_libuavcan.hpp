@@ -456,7 +456,7 @@ private:
 	InterfaceGroupType S32K_InterfaceGroupObj;
 
 	/* Number of filters supported by a single FlexCAN instace */
-	constexpr static std::uint8_t S32K_Filter_Count 	= 5u;
+	constexpr static std::uint8_t S32K_Filter_Count = 5u;
 
 	/* Lookup table for FlexCAN indices in PCC register */
 	constexpr static std::uint8_t PCC_FlexCAN_Index[] = {36u, 37u, 43u};
@@ -465,7 +465,7 @@ private:
 	constexpr static std::uint32_t S32K_FlexCAN_NVIC_Indices[][2u] = TARGET_S32K_FLEXCAN_NVIC_INDICES;
 
 	/* Frame capacity for the intermediate ISR buffer */
-	constexpr static std::size_t S32K_Frame_Capacity  = 500u;
+	constexpr static std::size_t S32K_Frame_Capacity = 500u;
 
 public:
 
