@@ -57,7 +57,6 @@
     #define TARGET_S32K_FLEXCAN_NVIC_INDICES    {{2u,0x20000},{2u,0x1000000},{2u,0x80000000}}
 #endif
 
-
 namespace libuavcan
 {
 namespace media
@@ -75,9 +74,10 @@ namespace media
 class S32K_InterfaceGroup : public InterfaceGroup< CAN::Frame< CAN::TypeFD::MaxFrameSizeBytes> >{
 private:
 
-    /* libuavcan constants for S32K driver layer in current class */
-    constexpr static std::uint8_t MB_Size_Words  = 18u; /* Size in words (4 bytes) of the offset between message buffers */
-    constexpr static std::uint8_t MB_Data_Offset = 2u;  /* Offset in words for reaching the payload of a message buffer */
+    /* Size in words (4 bytes) of the offset between message buffers */
+    constexpr static std::uint8_t MB_Size_Words  = 18u;
+    /* Offset in words for reaching the payload of a message buffer */
+    constexpr static std::uint8_t MB_Data_Offset = 2u;
 
 protected:
 
@@ -85,7 +85,8 @@ protected:
     constexpr static std::uint_fast8_t S32K_CANFD_Count = TARGET_S32K_CAN_FD_COUNT;
 
     /* Intermediate buffer for ISR reception with static memory pool for each instance */
-    static std::deque<FrameType, platform::PoolAllocator< S32K_Frame_Capacity, sizeof(FrameType)> > frame_ISRbuffer_[ S32K_CANFD_Count ];
+    static std::deque<FrameType, platform::PoolAllocator< S32K_Frame_Capacity, 
+                                                          sizeof(FrameType)> > frame_ISRbuffer_[ S32K_CANFD_Count ];
 
     /* Array of FlexCAN instances for dereferencing from */
     constexpr static CAN_Type * FlexCAN[] = CAN_BASE_PTRS;
@@ -112,23 +113,29 @@ public:
         libuavcan::Result Status = libuavcan::Result::Success;
 
         /* Input validation */
-        if( (frames_len > MaxTxFrames) || (interface_index > S32K_CANFD_Count) )
-        {
-            Status = libuavcan::Result::BadArgument;
-        }
+        static_assert(frames_len <= MaxTxFrames,
+                      "frames_len argument is greater than what the current implementation supports.");
+        
+        static_assert(interface_index <= S32K_CANFD_Count,
+                      "interface_index argument is greater than the number of available interfaces.");
 
         if( isSuccess( Status ) )
         {
             /* Read the CODE of the Control and Status word of the TX message buffers from the specified instance */
-            std::uint32_t CODE_MB0 = ((FlexCAN[ interface_index-1 ]->RAMn[0*MB_Size_Words] & CAN_RAMn_DATA_BYTE_0(0xF)) >> CAN_RAMn_DATA_BYTE_0_SHIFT );
-            std::uint32_t CODE_MB1 = ((FlexCAN[ interface_index-1 ]->RAMn[1*MB_Size_Words] & CAN_RAMn_DATA_BYTE_0(0xF)) >> CAN_RAMn_DATA_BYTE_0_SHIFT );
-            std::uint8_t flag = 0;
+            std::uint32_t CODE_MB0 = ((FlexCAN[ interface_index-1 ]->RAMn[0*MB_Size_Words] & 
+                                     CAN_RAMn_DATA_BYTE_0(0xF)) >> CAN_RAMn_DATA_BYTE_0_SHIFT );
+                                     
+            std::uint32_t CODE_MB1 = ((FlexCAN[ interface_index-1 ]->RAMn[1*MB_Size_Words] & 
+                                     CAN_RAMn_DATA_BYTE_0(0xF)) >> CAN_RAMn_DATA_BYTE_0_SHIFT );
+                                     
+            /* Initialize flag used for MB semaphore */
+            std::uint8_t flag = 0; 
 
-            /* Check if Tx Message buffer status CODE is inactive (0b1000) */
+            /* Check if Tx Message buffer status CODE is inactive (0b1000) and transmit through MB0*/
             if( 0x8 == CODE_MB0 )
             {
-                /* Transmit through MB0 */
-                FlexCAN[ interface_index-1 ]->IFLAG1 |= CAN_IFLAG1_BUF0I_MASK; /* Ensure interrupt flag for MB0 is cleared (write to clear register) */
+                /* Ensure interrupt flag for MB0 is cleared (write to clear register) */
+                FlexCAN[ interface_index-1 ]->IFLAG1 |= CAN_IFLAG1_BUF0I_MASK; 
 
                 /* Get data length of the frame wished to be written */
                 std::uint_fast8_t payloadLength = frames[0].getDataLength();
@@ -137,16 +144,18 @@ public:
                 for(std::uint8_t i = 0; i < (payloadLength >> 2); i++)
                 {
                     /* Build up each 32 bit word with 4 indices from frame.data uint8_t array */
-                    FlexCAN[ interface_index-1 ]->RAMn[0*MB_Size_Words + MB_Data_Offset + i] = (static_cast<std::uint32_t>(frames[0].data[(i << 2) + 0] << 24))  |
-                                                           (static_cast<std::uint32_t>(frames[0].data[(i << 2) + 1] << 16))  |
-                                                           (static_cast<std::uint32_t>(frames[0].data[(i << 2) + 2] << 8))   |
-                                                                          (frames[0].data[(i << 2) + 3] << 0);
+                    FlexCAN[ interface_index-1 ]->RAMn[0*MB_Size_Words + MB_Data_Offset + i] =
+                                                    (static_cast<std::uint32_t>(frames[0].data[(i << 2) + 0] << 24))  |
+                                                    (static_cast<std::uint32_t>(frames[0].data[(i << 2) + 1] << 16))  |
+                                                    (static_cast<std::uint32_t>(frames[0].data[(i << 2) + 2] << 8))   |
+                                                                               (frames[0].data[(i << 2) + 3] << 0);
                 }
 
-                /* Fill up payload of frame's bytes that dont fill up a 32-bit word, cases of 0,1,2,3,5,6,7 byte data length */
+                /* Fill up payload of frame's bytes that dont fill upa 32-bit word,(0,1,2,3,5,6,7 byte data length)*/
                 for(std::uint8_t i = 0; i < (payloadLength & 0x3); i++)
                 {
-                    FlexCAN[ interface_index-1 ]->RAMn[0*MB_Size_Words + MB_Data_Offset + (payloadLength >> 2)] |= static_cast<std::uint32_t>(frames[0].data[ ((payloadLength >> 2) << 2) + i ] << ((3-i) << 3) );
+                    FlexCAN[ interface_index-1 ]->RAMn[0*MB_Size_Words + MB_Data_Offset + (payloadLength >> 2)] |=
+                         static_cast<std::uint32_t>(frames[0].data[ ((payloadLength >> 2) << 2) + i ] << ((3-i) << 3) );
                 }
 
                 /* Fill up frame ID */
@@ -154,18 +163,18 @@ public:
 
                 /* Fill up word 0 of frame and transmit it
                  * Extended Data Length       (EDL) = 1
-                 * Bit Rate Switch        (BRS) = 1
+                 * Bit Rate Switch            (BRS) = 1
                  * Error State Indicator      (ESI) = 0
                  * Message Buffer Code       (CODE) = 12 ( Transmit data frame )
                  * Substitute Remote Request  (SRR) = 1  ( Mandatory 1 for Tx )
-                 * ID Extended Bit        (IDE) = 1
+                 * ID Extended Bit            (IDE) = 1
                  * Remote Tx Request          (RTR) = 0
-                 * Data Length Code       (DLC) = frame.getdlc()
+                 * Data Length Code           (DLC) = frame.getdlc()
                  * Counter Time Stamp  (TIME STAMP) = 0 ( Handled by hardware )
                  */
                 FlexCAN[ interface_index-1 ]->RAMn[0*MB_Size_Words + 0] = CAN_RAMn_DATA_BYTE_1(0x60)          |
-                                              CAN_WMBn_CS_DLC(frames[0].getdlc()) |
-                                              CAN_RAMn_DATA_BYTE_0(0xCC);
+                                                                          CAN_WMBn_CS_DLC(frames[0].getdlc()) |
+                                                                          CAN_RAMn_DATA_BYTE_0(0xCC);
 
                 /* Set the return status as successfull */
                 Status = libuavcan::Result::Success;
@@ -179,10 +188,11 @@ public:
                 /* Turn on flag for not retransmitting on next MB*/
                 flag = 1;
             }
+            /* Transmit through MB1 if MB0 was busy */
             else if ( ( 0x8 == CODE_MB1 ) && !flag )
             {
-                /* Transmit through MB1 */
-                FlexCAN[ interface_index-1 ]->IFLAG1 |= CAN_IFLAG1_BUF4TO1I(1);  /* Ensure interurpt flag for MB1 is cleared (write to clear register) */
+                /* Ensure interurpt flag for MB1 is cleared (write to clear register) */
+                FlexCAN[ interface_index-1 ]->IFLAG1 |= CAN_IFLAG1_BUF4TO1I(1);  
 
                 /* Get data length of the frame wished to be written */
                 std::uint_fast8_t payloadLength = frames[0].getDataLength();
@@ -191,16 +201,18 @@ public:
                 for(std::uint8_t i = 0; i < (payloadLength >> 2); i++)
                 {
                     /* Build up each 32 bit word with 4 indices from frame.data uint8_t array */
-                    FlexCAN[ interface_index-1 ]->RAMn[1*MB_Size_Words + MB_Data_Offset + i] = (static_cast<std::uint32_t>(frames[0].data[(i << 2) + 0] << 24))  |
-                                                               (static_cast<std::uint32_t>(frames[0].data[(i << 2) + 1] << 16))  |
-                                                               (static_cast<std::uint32_t>(frames[0].data[(i << 2) + 2] << 8))   |
-                                                                          (frames[0].data[(i << 2) + 3] << 0);
+                    FlexCAN[ interface_index-1 ]->RAMn[1*MB_Size_Words + MB_Data_Offset + i] = 
+                                                    (static_cast<std::uint32_t>(frames[0].data[(i << 2) + 0] << 24))  |
+                                                    (static_cast<std::uint32_t>(frames[0].data[(i << 2) + 1] << 16))  |
+                                                    (static_cast<std::uint32_t>(frames[0].data[(i << 2) + 2] << 8))   |
+                                                                               (frames[0].data[(i << 2) + 3] << 0);
                 }
 
-                /* Fill up payload of frame's bytes that dont fill up a 32-bit word, cases of 0,1,2,3,5,6,7 byte data length */
+                /* Fill up payload of frame's bytes that dont fill upa 32-bit word,(0,1,2,3,5,6,7 byte data length)*/
                 for(std::uint8_t i = 0; i < (payloadLength & 0x3); i++)
                 {
-                    FlexCAN[ interface_index-1 ]->RAMn[1*MB_Size_Words + MB_Data_Offset + (payloadLength >> 2)] |= static_cast<std::uint32_t>(frames[0].data[ ((payloadLength >> 2) << 2) + i ] << ((3-i) << 3) );
+                    FlexCAN[ interface_index-1 ]->RAMn[1*MB_Size_Words + MB_Data_Offset + (payloadLength >> 2)] |= 
+                         static_cast<std::uint32_t>(frames[0].data[ ((payloadLength >> 2) << 2) + i ] << ((3-i) << 3) );
                 }
 
                 /* Fill up frame ID */
@@ -208,18 +220,18 @@ public:
 
                 /* Fill up word 0 of frame and transmit it
                  * Extended Data Length       (EDL) = 1
-                 * Bit Rate Switch        (BRS) = 1
+                 * Bit Rate Switch            (BRS) = 1
                  * Error State Indicator      (ESI) = 0
                  * Message Buffer Code       (CODE) = 12 ( Transmit data frame )
                  * Substitute Remote Request  (SRR) = 1  ( Mandatory 1 for Tx )
-                 * ID Extended Bit        (IDE) = 1
+                 * ID Extended Bit            (IDE) = 1
                  * Remote Tx Request          (RTR) = 0
-                 * Data Length Code       (DLC) = frame.getdlc()
+                 * Data Length Code           (DLC) = frame.getdlc()
                  * Counter Time Stamp  (TIME STAMP) = 0  ( Handled by hardware )
                  */
                 FlexCAN[ interface_index-1 ]->RAMn[1*MB_Size_Words + 0] = CAN_RAMn_DATA_BYTE_1(0x60)          |
-                                              CAN_WMBn_CS_DLC(frames[0].getdlc()) |
-                                              CAN_RAMn_DATA_BYTE_0(0xCC);
+                                                                          CAN_WMBn_CS_DLC(frames[0].getdlc()) |
+                                                                          CAN_RAMn_DATA_BYTE_0(0xCC);
 
                 /* Set the return status as successfull */
                 Status = libuavcan::Result::Success;
@@ -250,10 +262,8 @@ public:
         out_frames_read = 0;
 
         /* Input validation */
-        if( interface_index > S32K_CANFD_Count )
-        {
-            Status = libuavcan::Result::BadArgument;
-        }
+        static_assert(interface_index <= S32K_CANFD_Count,
+                      "interface_index argument is greater than the number of available interfaces.");
 
         if( isSuccess(Status) )
         {
@@ -293,10 +303,8 @@ public:
         libuavcan::Result Status = libuavcan::Result::Success;
 
         /* Input validation */
-        if( filter_config_length > S32K_Filter_Count  )
-        {
-            Status = libuavcan::Result::BadArgument;
-        }
+        static_assert(filter_config_length <= S32K_Filter_Count,
+                      "filter_config_length argument is greater than the curent supported number of filters.");
 
         if( isSuccess(Status) )
         {
@@ -321,13 +329,13 @@ public:
                          * Error State Indicator     (ESI) = 0
                          * Message Buffer Code      (CODE) = 4 ( Active for reception and empty )
                          * Substitute Remote Request (SRR) = 0
-                         * ID Extended Bit       (IDE) = 1
+                         * ID Extended Bit           (IDE) = 1
                          * Remote Tx Request         (RTR) = 0
-                         * Data Length Code      (DLC) = 0 ( Valid for transmission only )
+                         * Data Length Code          (DLC) = 0 ( Valid for transmission only )
                          * Counter Time Stamp (TIME STAMP) = 0 ( Handled by hardware )
                          */
                         FlexCAN[i]->RAMn[(j+2)*MB_Size_Words] = CAN_RAMn_DATA_BYTE_0(0xC4) |
-                                            CAN_RAMn_DATA_BYTE_1(0x20);
+                                                                CAN_RAMn_DATA_BYTE_1(0x20);
 
                         /* Setup Message buffers 2-7 29-bit extended ID from parameter */
                         FlexCAN[i]->RAMn[(j+2)*MB_Size_Words + 1] = filter_config[j]->id;
@@ -375,7 +383,6 @@ public:
         /* Start of timed block */
         while( delta<cycles_timeout )
         {
-
             for(std::uint8_t i = 0; i < S32K_CANFD_Count; i++ )
             {
                 /* If ignore = true, check only RX buffers (2th-6th) */
@@ -447,7 +454,7 @@ public:
     /* Initializes the peripherals needed for libuavcan driver layer */
     virtual libuavcan::Result startInterfaceGroup(const typename InterfaceGroupType::FrameType::Filter* filter_config,
                                                              std::size_t                        filter_config_length,
-                                                                 InterfaceGroupPtrType&                 out_group) override
+                                                                 InterfaceGroupPtrType&         out_group) override
     {
 
       /* Initialize return values */
@@ -455,10 +462,8 @@ public:
       out_group = nullptr;
 
       /* Input validation */
-      if( filter_config_length > S32K_Filter_Count  )
-      {
-        Status = libuavcan::Result::BadArgument;
-      }
+        static_assert(filter_config_length <= S32K_Filter_Count,
+                      "filter_config_length argument is greater than the curent supported number of filters.");
 
       if( isSuccess(Status) )
       {
@@ -488,9 +493,10 @@ public:
 
         if ( isSuccess(Status) )
         {
-          Status = flagPollTimeout_Set(SCG->SOSCCSR,SCG_SOSCCSR_SOSCVLD_MASK);  /* Poll for valid SOSC reference, needs 4096 cycles*/
+          /* Poll for valid SOSC reference, needs 4096 cycles*/
+          Status = flagPollTimeout_Set(SCG->SOSCCSR,SCG_SOSCCSR_SOSCVLD_MASK);
 
-              /* System PLL (SPLL) initialization for to 160Mhz reference */
+          /* System PLL (SPLL) initialization for to 160Mhz reference */
           SCG->SPLLCSR &= ~SCG_SPLLCSR_LK_MASK;     /* Ensure the register is unlocked */
           SCG->SPLLCSR &= ~SCG_SPLLCSR_SPLLEN_MASK; /* Disable PLL for setup */
           SCG->SPLLCFG  =  SCG_SPLLCFG_MULT(24);    /* Select multiply factor of 40 for 160Mhz SPLL_CLK */
@@ -502,8 +508,8 @@ public:
             Status = flagPollTimeout_Set(SCG->SPLLCSR,SCG_SPLLCSR_SPLLVLD_MASK); /* Poll for valid SPLL reference */
 
             /* Normal RUN configuration for output clocks */
-            SCG->RCCR    |=  SCG_RCCR_SCS(6)     |    /* Select SPLL as system clock source */
-                         SCG_RCCR_DIVCORE(1) |    /* Additional dividers for Normal Run mode */
+            SCG->RCCR |= SCG_RCCR_SCS(6)     |  /* Select SPLL as system clock source */
+                         SCG_RCCR_DIVCORE(1) |  /* Additional dividers for Normal Run mode */
                          SCG_RCCR_DIVBUS(1)  |
                          SCG_RCCR_DIVSLOW(2);
 
@@ -534,7 +540,7 @@ public:
 
             /* Start the timers */
             LPIT0->SETTEN |= LPIT_SETTEN_SET_T_EN_0(1) |
-                     LPIT_SETTEN_SET_T_EN_1(1);
+                             LPIT_SETTEN_SET_T_EN_1(1);
 
             /* Verify that the least significant 32-bit timer is counting (not locked at 0) */
             if ( isSuccess(Status) )
@@ -547,9 +553,9 @@ public:
               for(std::uint8_t i = 0; i < S32K_CANFD_Count ; i++)
               {
                 PCC->PCCn[ PCC_FlexCAN_Index[i] ] = PCC_PCCn_CGC_MASK; /* FlexCAN0 clock gating */
-                FlexCAN[i]->MCR   |=  CAN_MCR_MDIS_MASK;           /* Disable FlexCAN0 module for clock source selection */
-                FlexCAN[i]->CTRL1 |=  CAN_CTRL1_CLKSRC_MASK;           /* Select SYS_CLK as source (80Mhz)*/
-                FlexCAN[i]->MCR   &= ~CAN_MCR_MDIS_MASK;           /* Enable FlexCAN and automatic transition to freeze mode for setup */
+                FlexCAN[i]->MCR   |=  CAN_MCR_MDIS_MASK;     /* Disable FlexCAN0 module for clock source selection */
+                FlexCAN[i]->CTRL1 |=  CAN_CTRL1_CLKSRC_MASK; /* Select SYS_CLK as source (80Mhz)*/
+                FlexCAN[i]->MCR   &= ~CAN_MCR_MDIS_MASK;     /* Enable FlexCAN and automatic transition to freeze mode*/
 
                 /* Block for freeze mode entry */
                 if ( isSuccess(Status) )
@@ -557,49 +563,50 @@ public:
                   Status = flagPollTimeout_Set(FlexCAN[i]->MCR,CAN_MCR_FRZACK_MASK);
 
                   /* Next configurations are only permitted in freeze mode */
-                  FlexCAN[i]->MCR   |= CAN_MCR_FDEN_MASK  |        /* Habilitate CANFD feature */
-                               CAN_MCR_FRZ_MASK;           /* Enable freeze mode entry when HALT bit is asserted */
+                  FlexCAN[i]->MCR |= CAN_MCR_FDEN_MASK  |      /* Habilitate CANFD feature */
+                                     CAN_MCR_FRZ_MASK;         /* Enable freeze mode entry when HALT bit is asserted */
                   FlexCAN[i]->CTRL2 |= CAN_CTRL2_ISOCANFDEN_MASK;  /* Activate the use of ISO 11898-1 CAN-FD standard */
 
                   /* CAN Bit Timing (CBT) configuration for a nominal phase of 1 Mbit/s with 80 time quantas,
                      in accordance with Bosch 2012 specification, sample point at 83.75% */
 
                   FlexCAN[i]->CBT |= CAN_CBT_BTF_MASK     |  /* Enable extended bit timing configurations for CAN-FD
-                                    for setting up separetely nominal and data phase */
-                                 CAN_CBT_EPRESDIV(0)  |  /* Prescaler divisor factor of 1 */
-                         CAN_CBT_EPROPSEG(46) |  /* Propagation segment of 47 time quantas */
-                         CAN_CBT_EPSEG1(18)   |  /* Phase buffer segment 1 of 19 time quantas */
-                         CAN_CBT_EPSEG2(12)   |  /* Phase buffer segment 2 of 13 time quantas */
-                         CAN_CBT_ERJW(12);       /* Resynchronization jump width same as PSEG2 */
+                                                                for setting up separetely nominal and data phase */
+                                     CAN_CBT_EPRESDIV(0)  |  /* Prescaler divisor factor of 1 */
+                                     CAN_CBT_EPROPSEG(46) |  /* Propagation segment of 47 time quantas */
+                                     CAN_CBT_EPSEG1(18)   |  /* Phase buffer segment 1 of 19 time quantas */
+                                     CAN_CBT_EPSEG2(12)   |  /* Phase buffer segment 2 of 13 time quantas */
+                                     CAN_CBT_ERJW(12);       /* Resynchronization jump width same as PSEG2 */
 
                   /* CAN-FD Bit Timing (FDCBT) for a data phase of 4 Mbit/s with 20 time quantas,
                  in accordance with Bosch 2012 specification, sample point at 75% */
 
                   FlexCAN[i]->FDCBT |= CAN_FDCBT_FPRESDIV(0) |  /* Prescaler divisor factor of 1 */
-                                   CAN_FDCBT_FPROPSEG(7) |  /* Propagation semgment of 7 time quantas (only register that doesn't add 1) */
-                               CAN_FDCBT_FPSEG1(6)   |  /* Phase buffer segment 1 of 7 time quantas */
-                           CAN_FDCBT_FPSEG2(4)   |  /* Phase buffer segment 2 of 5 time quantas */
-                           CAN_FDCBT_FRJW(4);       /* Resynchorinzation jump width same as PSEG2 */
+                                       CAN_FDCBT_FPROPSEG(7) |  /* Propagation semgment of 7 time quantas 
+                                                                   (only register that doesn't add 1) */
+                                       CAN_FDCBT_FPSEG1(6)   |  /* Phase buffer segment 1 of 7 time quantas */
+                                       CAN_FDCBT_FPSEG2(4)   |  /* Phase buffer segment 2 of 5 time quantas */
+                                       CAN_FDCBT_FRJW(4);       /* Resynchorinzation jump width same as PSEG2 */
 
                   /* Additional CAN-FD configurations */
                   FlexCAN[i]->FDCTRL |= CAN_FDCTRL_FDRATE_MASK | /* Enable bit rate switch in data phase of frame */
-                                CAN_FDCTRL_TDCEN_MASK  | /* Enable transceiver delay compensation */
-                            CAN_FDCTRL_TDCOFF(5)   | /* Setup 5 FlexCAN clock cycles for delay compensation in data phase sampling */
-                            CAN_FDCTRL_MBDSR0(3);    /* Setup 64 bytes per message buffer for a maximum of 7 MB's */
+                                        CAN_FDCTRL_TDCEN_MASK  | /* Enable transceiver delay compensation */
+                                        CAN_FDCTRL_TDCOFF(5)   | /* Setup 5 cycles for data phase sampling delay */
+                                        CAN_FDCTRL_MBDSR0(3);    /* Setup 64 bytes per message buffer (7 MB's) */
 
                   /* Message buffers are located in a dedicated RAM inside FlexCAN, they aren't affected by reset,
-                   * so they must be explicitly initialized, they total 128 slots of 4 words each, which sum to 512 bytes,
-                   * each MB is 72 byte in size ( 64 payload and 8 for headers )
+                   * so they must be explicitly initialized, they total 128 slots of 4 words each, which sum 
+                   * to 512 bytes, each MB is 72 byte in size ( 64 payload and 8 for headers )
                    */
                   for(std::uint8_t j = 0; j < CAN_RAMn_COUNT; j++ )
                   {
                     FlexCAN[i]->RAMn[j] = 0;
                   }
 
-                  /* Setup maximum number of message buffers as 7, 0th and 1st for transmission and 2nd-7th for reception */
+                  /* Setup maximum number of message buffers as 7, 0th and 1st for transmission and 2nd-7th for RX */
                   FlexCAN[i]->MCR |= CAN_MCR_MAXMB(6)    |
-                                 CAN_MCR_SRXDIS_MASK | /* Disable self-reception of frames if ID matches */
-                         CAN_MCR_IRMQ_MASK;    /* Enable individual message buffer masking */
+                                     CAN_MCR_SRXDIS_MASK | /* Disable self-reception of frames if ID matches */
+                                     CAN_MCR_IRMQ_MASK;    /* Enable individual message buffer masking */
 
                   /* Setup Message buffers 2-7 for reception and set filters */
                   for(std::uint8_t j = 0; j < filter_config_length; j++ )
@@ -609,17 +616,17 @@ public:
 
                     /* Setup word 0 (4 Bytes) for ith MB
                      * Extended Data Length      (EDL) = 1
-                     * Bit Rate Switch       (BRS) = 1
+                     * Bit Rate Switch           (BRS) = 1
                      * Error State Indicator     (ESI) = 0
-                     * Message Buffer Code  (CODE) = 4 ( Active for reception and empty )
+                     * Message Buffer Code       (CODE) = 4 ( Active for reception and empty )
                      * Substitute Remote Request (SRR) = 0
                      * ID Extended Bit           (IDE) = 1
-                     * Remote Tx Request     (RTR) = 0
+                     * Remote Tx Request         (RTR) = 0
                      * Data Length Code          (DLC) = 0 ( Valid for transmission only )
                      * Counter Time Stamp (TIME STAMP) = 0 ( Handled by hardware )
                      */
                     FlexCAN[i]->RAMn[(j+2)*MB_Size_Words] = CAN_RAMn_DATA_BYTE_0(0xC4) |
-                                            CAN_RAMn_DATA_BYTE_1(0x20);
+                                                            CAN_RAMn_DATA_BYTE_1(0x20);
 
                     /* Setup Message buffers 2-7 29-bit extended ID from parameter */
                     FlexCAN[i]->RAMn[(j+2)*MB_Size_Words + 1] = filter_config[j]->id;
@@ -646,7 +653,7 @@ public:
                     }
 
                   }
-                    }
+                }
               }
             }
           }
@@ -706,7 +713,8 @@ public:
     static void S32K_libuavcan_ISR(std::uint8_t instance)
     {
         /* Before anything, get a timestamp  */
-        libuavcan::time::Monotonic timestamp_ISR = static_cast<std::uint64_t>( ( static_cast<std::uint64_t>(0xFFFFFFFF - LPIT0->TMR[1].CVAL) << 32) | (  0xFFFFFFFF - LPIT0->TMR[0].CVAL ));
+        libuavcan::time::Monotonic timestamp_ISR = static_cast<std::uint64_t>( ( static_cast<std::uint64_t>
+                                       (0xFFFFFFFF - LPIT0->TMR[1].CVAL) << 32) | (  0xFFFFFFFF - LPIT0->TMR[0].CVAL ));
 
         /* Initialize variable for finding which MB received */
         std::uint8_t MB_index = 0;
@@ -725,12 +733,14 @@ public:
             MB_index = 6;
 
         /* Receive a frame only if the buffer its under its capacity */
-        if (frame_ISRbuffer_[instance].get_allocator().max_size() <= S32K_Frame_Capacity )
+        if (frame_ISRbuffer_[instance].get_allocator().max_size() <= S32K_Frame_Capacity)
         {
             /* Parse the Message buffer, reading the control and status word locks the MB */
 
             /* Get dlc and convert to data length in bytes */
-            CAN::FrameDLC dlc_ISR = ((FlexCAN[instance]->RAMn[MB_index*MB_Size_Words + 0]) & CAN_WMBn_CS_DLC_MASK ) >> CAN_WMBn_CS_DLC_SHIFT;
+            CAN::FrameDLC dlc_ISR = ((FlexCAN[instance]->RAMn[MB_index*MB_Size_Words + 0]) & CAN_WMBn_CS_DLC_MASK ) 
+                                                                                          >> CAN_WMBn_CS_DLC_SHIFT;
+            /* Convert from dlc to data length in bytes */
             std::uint_fast8_t payloadLength_ISR = CAN::dlcToLength(dlc_ISR);
 
             /* Get the id */
@@ -742,13 +752,16 @@ public:
             /* Parse the full words of the MB in bytes */
             for(std::uint8_t i = 0; i < payloadLength_ISR; i++)
             {
-                data_ISR_byte[i] = ( FlexCAN[instance]->RAMn[MB_index*MB_Size_Words + MB_Data_Offset + (i >> 2)] & (0xFF << ((3 - (i & 0x3)) << 3 ) ) ) >> ((3 - i & 0x3) << 3) ;
+                data_ISR_byte[i] = ( FlexCAN[instance]->RAMn[MB_index*MB_Size_Words + MB_Data_Offset + (i >> 2)] & 
+                                                          (0xFF << ((3 - (i & 0x3)) << 3 ) ) ) >> ((3 - i & 0x3) << 3);
             }
 
             /* Parse remaining bytes that don't complete up to a word if there are */
             for(std::uint8_t i = 0; i < (payloadLength_ISR & 0x3); i++)
             {
-                data_ISR_byte[ payloadLength_ISR - (payloadLength_ISR & 0x3) + i] = ( FlexCAN[instance]->RAMn[MB_index*MB_Size_Words + MB_Data_Offset + (payloadLength_ISR >> 2)] & (0xFF << ((3-i) << 3)) ) >> ((3-i) << 3);
+                data_ISR_byte[ payloadLength_ISR - (payloadLength_ISR & 0x3) + i] = 
+                                                  ( FlexCAN[instance]->RAMn[MB_index*MB_Size_Words + MB_Data_Offset + 
+                                                  (payloadLength_ISR >> 2)] & (0xFF << ((3-i) << 3)) ) >> ((3-i) << 3);
             }
 
             /* Create Frame object with constructor */
