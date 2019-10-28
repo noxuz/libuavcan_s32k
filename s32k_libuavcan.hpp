@@ -3,6 +3,11 @@
  * Distributed under the BSD-3-Clause-LBNL license, available in the file LICENSE.
  * Author: Abraham Rodriguez <abraham.rodriguez@nxp.com>
  */
+ 
+ /** @file
+  * Driver for the media layer of Libuavcan v1 targeting 
+  * the NXP S32K1 family of automotive grade MCU's
+  */
 
 #ifndef S32K_LIBUAVCAN_HPP_INCLUDED
 #define S32K_LIBUAVCAN_HPP_INCLUDED
@@ -80,7 +85,9 @@ protected:
     
 public:
 
-    /* Default constructor that sets the constant S32K_CANFD_Count in function of the target S32K1 mcu */
+    /** 
+    * Default constructor that sets the constant S32K_CANFD_Count in function of the target S32K1 mcu 
+    */
     S32K_InterfaceGroup()
     {
         /* Get the specific MCU model */
@@ -116,7 +123,8 @@ public:
     }
     
     /**
-     *  Get the number of CAN-FD capable FlexCAN modules in S32K MCU
+     * Get the number of CAN-FD capable FlexCAN modules in current S32K1 MCU
+     * @return 1-* depending of the target MCU.
      */
     virtual std::uint_fast8_t getInterfaceCount() const override
     {
@@ -125,6 +133,13 @@ public:
 
     /**
      * Send a frame through a particular available FlexCAN instance
+     * @param  interface_index  The index of the interface in the group to write the frames to.
+     * @param  frames           1..MaxTxFrames frames to write into the system queues for immediate transmission.
+     * @param  frames_len       The number of frames in the frames array that should be sent
+     *                          (starting from frame 0).
+     * @param  out_frames_written
+     *                          Will return MaxTxFrames in current implementation if the frame was sent successfully
+     * @return libuavcan::Result::Success if all frames were written.
      */
     virtual libuavcan::Result write(std::uint_fast8_t interface_index,
                                          const FrameT (&frames)[MaxTxFrames],
@@ -273,7 +288,11 @@ public:
         }
 
     /**
-     * Read from an intermediate ISR Frame buffer of an FlexCAN instance
+     * Read from an intermediate ISR Frame buffer of an FlexCAN instance.
+     * @param  interface_index  The index of the interface in the group to read the frames from.
+     * @param  out_frames       A buffer of frames to read.
+     * @param  out_frames_read  On output the number of frames read into the out_frames array.
+     * @return libuavcan::Result::Success If no errors occurred.
      */
     virtual libuavcan::Result read(std::uint_fast8_t interface_index,
                                         FrameT       (&out_frames)[MaxRxFrames],
@@ -316,7 +335,11 @@ public:
      * Reconfigure reception filters for dynamic subscription of nodes
      * NOTE: Since filter Iindex to reconfigure isn't provided, only up
      *       to which filter to modify, the filters in the range
-     *       (filter_config_length, S32K_Filter_Count ] are left unaltered
+     *       (filter_config_length, S32K_Filter_Count ] are left unaltered.
+     * @param  filter_config         The filtering to apply equally to all members of the group.
+     * @param  filter_config_length  The length of the @p filter_config argument.
+     * @return libuavcan::Result::Success if the group's receive filtering was successfully reconfigured.
+     * @return libuavcan::Result::Failure if a register didn't get configured as desired.
      */
     virtual libuavcan::Result reconfigureFilters(const typename FrameType::Filter* filter_config,
                                                                 std::size_t        filter_config_length) override
@@ -385,13 +408,21 @@ public:
         return Status;
     }
 
-    /* Block with timeout for available Message buffers */
+    /**
+     * Block with timeout for available Message buffers 
+     * @param [in]     timeout                  The amount of time to wait for and available message buffer.
+     * @param [in]     ignore_write_available   If set to true, will check availability only for RX MB's
+     *
+     * @return  libuavcan::Result::SuccessTimeout if timeout occurred and no required MB's became available.
+     *          libuavcan::Result::Success if an interface is ready for read, and if
+     *          @p ignore_write_available is false, or write.
+     */
     virtual libuavcan::Result select(libuavcan::duration::Monotonic timeout, bool ignore_write_available) override
     {
         /* Obtain timeout from object */
         constexpr std::uint32_t cycles_timeout = static_cast<std::uint32_t>(timeout.toMicrosecond());
         /* Initialization of delta variable for comparision */
-        volatile  std::uint32_t delta          = 0;
+        volatile  std::uint32_t delta = 0;
 
         /* Disable LPIT channel 3 for loading */
         LPIT0->CLRTEN |= LPIT_CLRTEN_CLR_T_EN_3(1);
@@ -470,7 +501,16 @@ private:
 
 public:
 
-    /* Initializes the peripherals needed for libuavcan driver layer */
+    /**
+     * Initializes the peripherals needed for libuavcan driver layer in current MCU 
+     * @param  filter_config         The filtering to apply equally to all FlexCAN instances.
+     * @param  filter_config_length  The length of the @p filter_config argument.
+     * @param  out_group             A pointer to set to the started group. This will be nullptr if the start method
+     *                               fails.
+     * @return libuavcan::Result::Success if the group was successfully started and a valid pointer was returned.
+     * @return libuavcan::Result::Failure if the initialization fails at some point.
+     *         The caller should assume that @p out_group is an invalid pointer if any failure is returned.
+     */
     virtual libuavcan::Result startInterfaceGroup(const typename InterfaceGroupType::FrameType::Filter* filter_config,
                                                                  std::size_t                    filter_config_length,
                                                                  InterfaceGroupPtrType&         out_group) override
@@ -486,21 +526,17 @@ public:
 
       if( isSuccess(Status) )
       {
-        /**
-         * LPIT0 channel initialization for timeout timer
-         */
+        /* LPIT0 channel initialization for timeout timer */
         PCC->PCCn[PCC_LPIT_INDEX] |= PCC_PCCn_CGC(1); /* Clock gating to LPIT module */
-        SCG->SIRCDIV |= SCG_SIRCDIV2(4)           /* Enable and divide by 8, 1Mhz */
+        SCG->SIRCDIV |= SCG_SIRCDIV2(4)               /* Enable and divide by 8, 1Mhz */
         PCC->PCCn[PCC_LPIT_INDEX] |= PCC_PCCn_PCS(2); /* Enable and select SIRCDIV2_CLK (8Mhz) */
-        LPIT0->MCR |= LPIT_MCR_M_CEN(1);          /* Enable module for setup */
+        LPIT0->MCR |= LPIT_MCR_M_CEN(1);              /* Enable module for setup */
 
         /* Select 32-bit peridic timer mode (default) */
         LPIT0->TMR[3].TCTRL |= LPIT_TMR_TCTRL_MODE(0);
 
-        /**
-         * SysClock initialization for feeding 80Mhz to FlexCAN
-         */
-
+        /* SysClock initialization for feeding 80Mhz to FlexCAN */
+        
         /* System Oscillator (SOSC) initialization for 8Mhz external crystal */
         SCG->SOSCCSR &= ~SCG_SOSCCSR_LK_MASK;     /* Ensure the register is unlocked */
         SCG->SOSCCSR &= ~SCG_SOSCCSR_SOSCEN_MASK; /* Disable SOSC for setup */
@@ -532,10 +568,7 @@ public:
                          SCG_RCCR_DIVBUS(1)  |
                          SCG_RCCR_DIVSLOW(2);
 
-            /**
-             * CAN frames timestamping 64-bit timer initialization
-             * using chained LPIT channel 0 and 1
-             */
+            /* CAN frames timestamping 64-bit timer initialization using chained LPIT channel 0 and 1 */
 
             /* Disable module for setup */
             LPIT0->MCR &= ~LPIT_MCR_M_CEN_MASK;
@@ -554,8 +587,8 @@ public:
             LPIT0->TMR[1].TCTRL |= LPIT_TMR_TCTRL_CHAIN(1);
 
             /* Setup max reload value for both channels 0xFFFFFFFF */
-                LPIT0->TMR[0].TVAL = LPIT_TMR_TVAL_TMR_VAL_MASK;
-                LPIT0->TMR[1].TVAL = LPIT_TMR_TVAL_TMR_VAL_MASK;
+            LPIT0->TMR[0].TVAL = LPIT_TMR_TVAL_TMR_VAL_MASK;
+            LPIT0->TMR[1].TVAL = LPIT_TMR_TVAL_TMR_VAL_MASK;
 
             /* Start the timers */
             LPIT0->SETTEN |= LPIT_SETTEN_SET_T_EN_0(1) |
@@ -566,9 +599,7 @@ public:
             {
               Status = flagPollTimeoutSet(LPIT0->TMR[0],LPIT_TMR_TVAL_TMR_VAL_MASK);
 
-              /**
-               * FlexCAN instances initialization
-               */
+              /* FlexCAN instances initialization */
               for(std::uint8_t i = 0; i < S32K_CANFD_Count ; i++)
               {
                 PCC->PCCn[ PCC_FlexCAN_Index[i] ] = PCC_PCCn_CGC_MASK; /* FlexCAN0 clock gating */
@@ -598,7 +629,7 @@ public:
                                      CAN_CBT_ERJW(12);       /* Resynchronization jump width same as PSEG2 */
 
                   /* CAN-FD Bit Timing (FDCBT) for a data phase of 4 Mbit/s with 20 time quantas,
-                 in accordance with Bosch 2012 specification, sample point at 75% */
+                     in accordance with Bosch 2012 specification, sample point at 75% */
 
                   FlexCAN[i]->FDCBT |= CAN_FDCBT_FPRESDIV(0) |  /* Prescaler divisor factor of 1 */
                                        CAN_FDCBT_FPROPSEG(7) |  /* Propagation semgment of 7 time quantas 
@@ -689,7 +720,9 @@ public:
     }
 
     /**
-     * Deinitializes the peripherals needed for the libuavcan driver layer
+     * Deinitializes the peripherals needed for the current libuavcan driver layer.
+     * @param inout_group Pointer that will be set to null 
+     * @return libuavcan::Result::Success. If the used peripherals were deinitialized properly.
      */
     virtual libuavcan::Result stopInterfaceGroup(InterfaceGroupPtrType& inout_group) override
     {
@@ -721,7 +754,9 @@ public:
     }
 
     /**
-     * Return the number of filters that the  current UAVCAN node can support
+     * Return the number of filters that the current UAVCAN node can support
+     * @return The maximum number of frame filters available for filter groups managed by this object, 
+     *         i.e. the number of combinations of ID and mask that each FlexCAN instance supports
      */
     virtual std::size_t getMaxFrameFilters() const override
     {
@@ -800,11 +835,10 @@ public:
 
 
     /**
-     * Function for block polling a bit flag until its set with a timeout using S32_Systick
+     * Function for block polling a bit flag until its set with a timeout of 1 second using a LPIT timer
      *
-     * Parameters:
-     *      flagRegister: Register where the flag is located
-     *      flagMask: Mask to AND'nd with the register for isolating the flag
+     * @param flagRegister Register where the flag is located.
+     * @param flagMask Mask to AND'nd with the register for isolating the flag.
      */
     libuavcan::Result flagPollTimeout_Set(volatile std::uint32_t &flagRegister, std::uint32_t flag_Mask) const
     {
@@ -841,11 +875,10 @@ public:
 
 
     /**
-     * Function for block polling a bit flag until its cleared with a timeout using S32_Systick
+     * Function for block polling a bit flag until its cleared with a timeout of 1 second using a LPIT timer
      *
-     * Parameters:
-     *      flagRegister: Register where the flag is located
-     *      flagMask: Mask to AND'nd with the register for isolating the flag
+     * @param flagRegister Register where the flag is located.
+     * @param flagMask Mask to AND'nd with the register for isolating the flag.
      */
     libuavcan::Result flagPollTimeout_Clear(volatile std::uint32_t &flagRegister, std::uint32_t flag_Mask) const
     {
