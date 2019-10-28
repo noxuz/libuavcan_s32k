@@ -41,22 +41,6 @@
 /* STL queue for the intermediate ISR buffer */
 #include <deque>
 
-/* Macro from MCU header for portability in the CAN-FD enabled FlexCAN modules in S32K1 familiy */
-#if defined(MCU_S32K116) || defined(MCU_S32K118) || defined(MCU_S32K142) || defined(MCU_S32K144)
-    #define TARGET_S32K_CAN_FD_COUNT    (1u)
-#elif defined(MCU_S32K146)
-    #define TARGET_S32K_CAN_FD_COUNT    (2u)
-#elif defined(MCU_S32K148)
-    #define TARGET_S32K_CAN_FD_COUNT    (3u)
-#endif
-
-/* Macro array for portable FlexCAN NVIC initialization */
-#if defined(MCU_S32K116) || defined(MCU_S32K118)
-    #define TARGET_S32K_FLEXCAN_NVIC_INDICES    {{0u,0x800}}
-#else
-    #define TARGET_S32K_FLEXCAN_NVIC_INDICES    {{2u,0x20000},{2u,0x1000000},{2u,0x80000000}}
-#endif
-
 namespace libuavcan
 {
 namespace media
@@ -81,8 +65,11 @@ private:
 
 protected:
 
-    /* Defined at precompilation by included target MCU header */
-    constexpr static std::uint_fast8_t S32K_CANFD_Count = TARGET_S32K_CAN_FD_COUNT;
+    /* Number of capable CANFD FlexCAN instances, defined in constructor */
+    constexpr static std::uint_fast8_t S32K_CANFD_Count;
+    
+    /* Lookup table for NVIC IRQ numbers for each FlexCAN instance */
+    constexpr static std::uint32_t S32K_FlexCAN_NVIC_Indices[][2u];
 
     /* Intermediate buffer for ISR reception with static memory pool for each instance */
     static std::deque<FrameType, platform::PoolAllocator< S32K_Frame_Capacity, 
@@ -90,9 +77,44 @@ protected:
 
     /* Array of FlexCAN instances for dereferencing from */
     constexpr static CAN_Type * FlexCAN[] = CAN_BASE_PTRS;
-
+    
 public:
 
+    /* Default constructor that sets the constant S32K_CANFD_Count in function of the target S32K1 mcu */
+    S32K_InterfaceGroup()
+    {
+        /* Get the specific MCU model */
+        std:uint32_t S32K_target = (SIM->SDID & ( SIM_SDID_SUBSERIES_MASK | SIM_SDID_DERIVATE_MASK )) 
+                                                                          >> SIM_SDID_DERIVATE_SHIFT;
+        
+        /* Initialize undefined constant S32K_CANFD_Count in function of the particular S32K MCU used */
+        if( (S32K_target == 0x16) || (S32K_target == 0x18) )
+        {
+            S32K_CANFD_Count = 1u;
+            S32K_FlexCAN_NVIC_Indices = {{0u,0x800}};
+        }
+        else if( S32K_target == 0x42 )
+        {
+            S32K_CANFD_Count = 1u;
+            S32K_FlexCAN_NVIC_Indices = {{2u,0x20000},{2u,0x1000000},{2u,0x80000000}};
+        }
+        else if( S32K_target == 0x46 )
+        {
+            S32K_CANFD_Count = 2u;
+            S32K_FlexCAN_NVIC_Indices = {{2u,0x20000},{2u,0x1000000},{2u,0x80000000}};
+        }
+        else if( S32K_target == 0x48 )
+        {
+            S32K_CANFD_Count = 3u;
+            S32K_FlexCAN_NVIC_Indices = {{2u,0x20000},{2u,0x1000000},{2u,0x80000000}};
+        }
+        else
+        {
+            S32K_CANFD_Count = 0u;
+        }
+        
+    }
+    
     /**
      *  Get the number of CAN-FD capable FlexCAN modules in S32K MCU
      */
@@ -443,9 +465,6 @@ private:
     /* Lookup table for FlexCAN indices in PCC register */
     constexpr static std::uint8_t PCC_FlexCAN_Index[] = {36u, 37u, 43u};
 
-    /* Lookup table for NVIC IRQ numbers for each FlexCAN instance */
-    constexpr static std::uint32_t S32K_FlexCAN_NVIC_Indices[][2u] = TARGET_S32K_FLEXCAN_NVIC_INDICES;
-
     /* Frame capacity for the intermediate ISR buffer */
     constexpr static std::size_t S32K_Frame_Capacity = 500u;
 
@@ -453,7 +472,7 @@ public:
 
     /* Initializes the peripherals needed for libuavcan driver layer */
     virtual libuavcan::Result startInterfaceGroup(const typename InterfaceGroupType::FrameType::Filter* filter_config,
-                                                             std::size_t                        filter_config_length,
+                                                                 std::size_t                    filter_config_length,
                                                                  InterfaceGroupPtrType&         out_group) override
     {
 
@@ -486,7 +505,7 @@ public:
         SCG->SOSCCSR &= ~SCG_SOSCCSR_LK_MASK;     /* Ensure the register is unlocked */
         SCG->SOSCCSR &= ~SCG_SOSCCSR_SOSCEN_MASK; /* Disable SOSC for setup */
         SCG->SOSCCFG  =  SCG_SOSCCFG_EREFS_MASK | /* Setup external crystal for SOSC reference */
-                 SCG_SOSCCFG_RANGE(2);    /* Select 8Mhz range */
+                         SCG_SOSCCFG_RANGE(2);    /* Select 8Mhz range */
         SCG->SOSCDIV |=  SCG_SOSCDIV_SOSCDIV2(4); /* Divider of 8 for LPIT clock source, gets 1Mhz reference */
         SCG->SOSCCSR  =  SCG_SOSCCSR_SOSCEN_MASK; /* Enable SOSC reference */
         SCG->SOSCCSR |=  SCG_SOSCCSR_LK_MASK;     /* Lock the register from accidental writes */
@@ -618,7 +637,7 @@ public:
                      * Extended Data Length      (EDL) = 1
                      * Bit Rate Switch           (BRS) = 1
                      * Error State Indicator     (ESI) = 0
-                     * Message Buffer Code       (CODE) = 4 ( Active for reception and empty )
+                     * Message Buffer Code      (CODE) = 4 ( Active for reception and empty )
                      * Substitute Remote Request (SRR) = 0
                      * ID Extended Bit           (IDE) = 1
                      * Remote Tx Request         (RTR) = 0
@@ -633,7 +652,8 @@ public:
                   }
 
                   /* Enable interrupt in NVIC for FlexCAN reception with default priority (ID = 81) */
-                  S32_NVIC->ISER[ S32K_FlexCAN_NVIC_Indices[i][0] ] = S32K_FlexCAN_NVIC_Indices[i][1];
+                  S32_NVIC->ISER[ S32K_InterfaceGroup::S32K_FlexCAN_NVIC_Indices[i][0] ] = 
+                                                                   S32K_InterfaceGroup::S32K_FlexCAN_NVIC_Indices[i][1];
 
                   /* Enable interrupts of reception MB's (0b1111100) */
                   FlexCAN[i]->IMASK1 = CAN_IMASK1_BUF31TO0M(124);
