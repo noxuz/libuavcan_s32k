@@ -12,7 +12,7 @@
 #ifndef S32K_LIBUAVCAN_HPP_INCLUDED
 #define S32K_LIBUAVCAN_HPP_INCLUDED
 
-/**
+/*
  * Integration Note, this driver utilizes the next modules.
  * LPIT: Channels 0,1 and 3
  * FlexCAN: All message buffers from each instance.
@@ -95,22 +95,22 @@ public:
                                                                           >> SIM_SDID_DERIVATE_SHIFT;
         
         /* Initialize undefined constant S32K_CANFD_Count in function of the particular S32K MCU used */
-        if( (S32K_target == 0x16) || (S32K_target == 0x18) )
+        if( (0x16 == S32K_target) || (0x18 == S32K_target) )
         {
             S32K_CANFD_Count = 1u;
             S32K_FlexCAN_NVIC_Indices = {{0u,0x800}};
         }
-        else if( S32K_target == 0x42 )
+        else if( 0x42 == S32K_target )
         {
             S32K_CANFD_Count = 1u;
             S32K_FlexCAN_NVIC_Indices = {{2u,0x20000},{2u,0x1000000},{2u,0x80000000}};
         }
-        else if( S32K_target == 0x46 )
+        else if( 0x46 == S32K_target )
         {
             S32K_CANFD_Count = 2u;
             S32K_FlexCAN_NVIC_Indices = {{2u,0x20000},{2u,0x1000000},{2u,0x80000000}};
         }
-        else if( S32K_target == 0x48 )
+        else if( 0x48 == S32K_target )
         {
             S32K_CANFD_Count = 3u;
             S32K_FlexCAN_NVIC_Indices = {{2u,0x20000},{2u,0x1000000},{2u,0x80000000}};
@@ -284,7 +284,6 @@ public:
 
         /* Return status code */
         return Status;
-
         }
 
     /**
@@ -328,7 +327,6 @@ public:
 
         /* Return status code */
         return Status;
-
      }
 
     /**
@@ -473,7 +471,6 @@ public:
 
         /* If this section is reached, means timeout ocurred and return timeout status */
         return libuavcan::Result::SuccessTimeout;
-
     }
 };
 
@@ -515,7 +512,6 @@ public:
                                                                  std::size_t                    filter_config_length,
                                                                  InterfaceGroupPtrType&         out_group) override
     {
-
       /* Initialize return values */
       libuavcan::Result Status = libuavcan::Result::Success;
       out_group = nullptr;
@@ -619,7 +615,6 @@ public:
 
                   /* CAN Bit Timing (CBT) configuration for a nominal phase of 1 Mbit/s with 80 time quantas,
                      in accordance with Bosch 2012 specification, sample point at 83.75% */
-
                   FlexCAN[i]->CBT |= CAN_CBT_BTF_MASK     |  /* Enable extended bit timing configurations for CAN-FD
                                                                 for setting up separetely nominal and data phase */
                                      CAN_CBT_EPRESDIV(0)  |  /* Prescaler divisor factor of 1 */
@@ -630,7 +625,6 @@ public:
 
                   /* CAN-FD Bit Timing (FDCBT) for a data phase of 4 Mbit/s with 20 time quantas,
                      in accordance with Bosch 2012 specification, sample point at 75% */
-
                   FlexCAN[i]->FDCBT |= CAN_FDCBT_FPRESDIV(0) |  /* Prescaler divisor factor of 1 */
                                        CAN_FDCBT_FPROPSEG(7) |  /* Propagation semgment of 7 time quantas 
                                                                    (only register that doesn't add 1) */
@@ -716,7 +710,6 @@ public:
 
       /* Return code for start of S32K_InterfaceGroup */
       return Status;
-
     }
 
     /**
@@ -791,7 +784,7 @@ public:
         if (frame_ISRbuffer_[instance].get_allocator().max_size() <= S32K_Frame_Capacity)
         {
             /* Parse the Message buffer, reading the control and status word locks the MB */
-
+         
             /* Get dlc and convert to data length in bytes */
             CAN::FrameDLC dlc_ISR = ((FlexCAN[instance]->RAMn[MB_index*MB_Size_Words + 0]) & CAN_WMBn_CS_DLC_MASK ) 
                                                                                           >> CAN_WMBn_CS_DLC_SHIFT;
@@ -868,8 +861,7 @@ public:
 
         }
 
-        /* If this section is reached, means timeout ocurred
-         * and return error status is returned */
+        /* If this section is reached, means timeout ocurred and return error status is returned */
         return libuavcan::Result::Failure;
     }
 
@@ -908,12 +900,9 @@ public:
 
         }
 
-        /* If this section is reached, means timeout ocurred
-         * and return error status is returned */
+        /* If this section is reached, means timeout ocurred and return error status is returned */
         return libuavcan::Result::Failure;
     }
-
-
 };
 
 } /* END namespace media */
