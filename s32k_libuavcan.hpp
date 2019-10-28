@@ -1,32 +1,7 @@
 /*
- * Copyright (c) 2016 - 2019, NXP.
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions are met:
- *
- * 1. Redistributions of source code must retain the above copyright notice,
- *    this list of conditions and the following disclaimer.
- *
- * 2. Redistributions in binary form must reproduce the above copyright notice,
- *    this list of conditions and the following disclaimer in the documentation
- *    and/or other materials provided with the distribution.
- *
- * 3. Neither the name of the copyright holder nor the names of its contributors
- *    may be used to endorse or promote products derived from this software
- *    without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY NXP "AS IS" AND ANY EXPRESSED OR
- * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
- * IN NO EVENT SHALL NXP OR ITS CONTRIBUTORS BE LIABLE FOR ANY DIRECT,
- * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
- * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
- * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
- * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING
- * IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
- * THE POSSIBILITY OF SUCH DAMAGE.
+ * Copyright (c) 2019, NXP. All rights reserved.
+ * Distributed under the BSD-3-Clause-LBNL license, available in the file LICENSE.
+ * Author: Abraham Rodriguez <abraham.rodriguez@nxp.com>
  */
 
 #ifndef S32K_LIBUAVCAN_HPP_INCLUDED
@@ -114,7 +89,7 @@ protected:
 
     /* Array of FlexCAN instances for dereferencing from */
     constexpr static CAN_Type * FlexCAN[] = CAN_BASE_PTRS;
-    
+
 public:
 
     /**
@@ -719,7 +694,7 @@ public:
     }
 
     /**
-     * Return the number of filters the UAVCAN node can support
+     * Return the number of filters that the  current UAVCAN node can support
      */
     virtual std::size_t getMaxFrameFilters() const override
     {
@@ -738,16 +713,16 @@ public:
 
         /* Check which MB caused the interrupt */
         switch( FlexCAN[instance]->IFLAG1 )
-            case 0x4:
-                MB_index = 2;
-            case 0x8:
-                MB_index = 3;
-            case 0x10:
-                MB_index = 4;
-            case 0x20:
-                MB_index = 5;
-            case 0x40:
-                MB_index = 6;
+        case 0x4:
+            MB_index = 2;
+        case 0x8:
+            MB_index = 3;
+        case 0x10:
+            MB_index = 4;
+        case 0x20:
+            MB_index = 5;
+        case 0x40:
+            MB_index = 6;
 
         /* Receive a frame only if the buffer its under its capacity */
         if (frame_ISRbuffer_[instance].get_allocator().max_size() <= S32K_Frame_Capacity )
@@ -784,7 +759,7 @@ public:
         }
 
         /* Unlock the MB by reading the timer register */
-        static_cast<void>(FlexCAN[instance]->TIMER);
+        (void)FlexCAN[instance]->TIMER;
 
         /* Clear MB interrupt flag (write 1 to clear)*/
         FlexCAN[instance]->IFLAG1 |= (1<<MB_index);
