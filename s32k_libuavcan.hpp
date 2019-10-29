@@ -6,7 +6,8 @@
  
  /** @file
   * Driver for the media layer of Libuavcan v1 targeting 
-  * the NXP S32K1 family of automotive grade MCU's
+  * the NXP S32K14 family of automotive grade MCU's running 
+  * CAN-FD at 4Mbit/s data phase and 2Mbit/s in nominal phase.
   */
 
 #ifndef S32K_LIBUAVCAN_HPP_INCLUDED
@@ -34,7 +35,7 @@
  * Asynchronous dividers not mentioned are left unset and SCG registers are locked
  */
 
-/* Include desired target S32K1xx registers and features header files,
+/* Include desired target S32K14x registers and features header files,
  * defaults to S32K144 from NXP's UAVCAN node board */
 #include "S32K144.h"
 
@@ -74,7 +75,9 @@ protected:
     std::uint_fast8_t S32K_CANFD_Count;
     
     /* Lookup table for NVIC IRQ numbers for each FlexCAN instance */
-    std::uint32_t S32K_FlexCAN_NVIC_Indices[][2u];
+    constexpr static std::uint32_t S32K_FlexCAN_NVIC_Indices[][2u] = S32K_FlexCAN_NVIC_Indices = {{2u,0x20000},
+                                                                                                  {2u,0x1000000},
+                                                                                                  {2u,0x80000000}};
 
     /* Intermediate buffer for ISR reception with static memory pool for each instance */
     std::deque<FrameType, platform::PoolAllocator< S32K_Frame_Capacity, 
@@ -86,7 +89,7 @@ protected:
 public:
 
     /** 
-    * Default constructor that sets the constant S32K_CANFD_Count and NVIC indicies in function of the target S32K1 mcu 
+    * Default constructor that sets the constant S32K_CANFD_Count and NVIC indicies in function of the target S32K14 mcu
     */
     S32K_InterfaceGroup()
     {
@@ -95,34 +98,21 @@ public:
                                                                           >> SIM_SDID_DERIVATE_SHIFT;
         
         /* Initialize undefined constant S32K_CANFD_Count in function of the particular S32K MCU used */
-        if( (0x16 == S32K_target) || (0x18 == S32K_target) )
+        switch(S32K_target)
         {
+        case(0x42):
             S32K_CANFD_Count = 1u;
-            S32K_FlexCAN_NVIC_Indices = {{0u,0x800}};
-        }
-        else if( 0x42 == S32K_target )
-        {
-            S32K_CANFD_Count = 1u;
-            S32K_FlexCAN_NVIC_Indices = {{2u,0x20000},{2u,0x1000000},{2u,0x80000000}};
-        }
-        else if( 0x46 == S32K_target )
-        {
+        case(0x46):
             S32K_CANFD_Count = 2u;
-            S32K_FlexCAN_NVIC_Indices = {{2u,0x20000},{2u,0x1000000},{2u,0x80000000}};
-        }
-        else if( 0x48 == S32K_target )
-        {
+        case(0x48):
             S32K_CANFD_Count = 3u;
-            S32K_FlexCAN_NVIC_Indices = {{2u,0x20000},{2u,0x1000000},{2u,0x80000000}};
-        }
-        else
-        {
-            S32K_CANFD_Count = 0u;
+        default:
+            S32K_CANFD_Count = 0;
         }
     }
     
     /**
-     * Get the number of CAN-FD capable FlexCAN modules in current S32K1 MCU
+     * Get the number of CAN-FD capable FlexCAN modules in current S32K14 MCU
      * @return 1-* depending of the target MCU.
      */
     virtual std::uint_fast8_t getInterfaceCount() const override
