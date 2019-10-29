@@ -71,14 +71,14 @@ private:
 protected:
 
     /* Number of capable CANFD FlexCAN instances, defined in constructor */
-    constexpr static std::uint_fast8_t S32K_CANFD_Count;
+    std::uint_fast8_t S32K_CANFD_Count;
     
     /* Lookup table for NVIC IRQ numbers for each FlexCAN instance */
-    constexpr static std::uint32_t S32K_FlexCAN_NVIC_Indices[][2u];
+    std::uint32_t S32K_FlexCAN_NVIC_Indices[][2u];
 
     /* Intermediate buffer for ISR reception with static memory pool for each instance */
-    static std::deque<FrameType, platform::PoolAllocator< S32K_Frame_Capacity, 
-                                                          sizeof(FrameType)> > frame_ISRbuffer_[ S32K_CANFD_Count ];
+    std::deque<FrameType, platform::PoolAllocator< S32K_Frame_Capacity, 
+                                                   sizeof(FrameType)> > frame_ISRbuffer_[ S32K_CANFD_Count ];
 
     /* Array of FlexCAN instances for dereferencing from */
     constexpr static CAN_Type * FlexCAN[] = CAN_BASE_PTRS;
