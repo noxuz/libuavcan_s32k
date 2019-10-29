@@ -86,7 +86,7 @@ protected:
 public:
 
     /** 
-    * Default constructor that sets the constant S32K_CANFD_Count in function of the target S32K1 mcu 
+    * Default constructor that sets the constant S32K_CANFD_Count and NVIC indicies in function of the target S32K1 mcu 
     */
     S32K_InterfaceGroup()
     {
@@ -119,7 +119,6 @@ public:
         {
             S32K_CANFD_Count = 0u;
         }
-        
     }
     
     /**
