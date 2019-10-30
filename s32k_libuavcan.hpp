@@ -77,9 +77,9 @@ protected:
                                                           (SIM_SDID_DERIVATE_MASK) ) >> SIM_SDID_DERIVATE_SHIFT];
     
     /* Lookup table for NVIC IRQ numbers for each FlexCAN instance */
-    constexpr static std::uint32_t S32K_FlexCAN_NVIC_Indices[][2u] = S32K_FlexCAN_NVIC_Indices = {{2u,0x20000},
-                                                                                                  {2u,0x1000000},
-                                                                                                  {2u,0x80000000}};
+    constexpr static std::uint32_t S32K_FlexCAN_NVIC_Indices[][2u] = {{2u,0x20000},
+                                                                      {2u,0x1000000},
+																	  {2u,0x80000000}};
 
     /* Array of FlexCAN instances for dereferencing from */
     constexpr static CAN_Type * FlexCAN[] = CAN_BASE_PTRS;
