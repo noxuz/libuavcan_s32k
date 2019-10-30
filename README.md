@@ -1,3 +1,3 @@
 # S32K_libuavcan
-Libuavcan driver for NXP S32K1 MCU family
-![alt text](https://www.dronecode.org/wp-content/uploads/sites/24/2018/08/nxp-logo.png)
+Libuavcan v1 driver layer for the NXP S32K14x family of automotive-grade microcontrollers.
+![alt text](https://www.logolynx.com/images/logolynx/55/55a30cdcb0b668ecfc2e369f7d1f1197.png)
