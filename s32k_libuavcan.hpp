@@ -52,26 +52,13 @@ namespace libuavcan
 namespace media
 {
 
-class CANFD_Instance_Counter{
-public:
-    static constexpr std::uint_fast8_t count_S32K_CANFD_instances()
-    {
-        /* Get the specific MCU model */
-        std:uint32_t S32K_target = (SIM->SDID & ( SIM_SDID_SUBSERIES_MASK | SIM_SDID_DERIVATE_MASK )) 
-                                                                          >> SIM_SDID_DERIVATE_SHIFT;
-        /* Initialize undefined constant S32K_CANFD_Count in function of the particular S32K MCU used */
-        switch(S32K_target)
-        {
-        case(0x42):
-            S32K_CANFD_Count = 1u;
-        case(0x46):
-            S32K_CANFD_Count = 2u;
-        case(0x48):
-            S32K_CANFD_Count = 3u;
-        }
-    }
-};
-
+    /* Lookup table for the number of CAN-FD capable FlexCAN instances in each S32k14x MCU */
+    constexpr static std::uint8_t S32K_CANFD_Instances_Number = {0,0,1u,0,1u,0,2u,0,3u};
+    
+    /* Intermediate buffer for ISR reception with static memory pool for each instance */
+    std::deque<FrameType, platform::PoolAllocator< S32K_Frame_Capacity, sizeof(FrameType)> > 
+    g_frame_ISRbuffer[ S32K_CANFD_Instances_Number[( (SIM->SDID)&(SIM_SDID_DERIVATE_MASK) )>>SIM_SDID_DERIVATE_SHIFT] ];
+                                                             
 /**
  * S32K CanFD driver layer InterfaceGroup
  * Class instantiation with the next template parameters:
@@ -86,16 +73,13 @@ class S32K_InterfaceGroup : public InterfaceGroup< CAN::Frame< CAN::TypeFD::MaxF
 protected:
 
     /* Number of capable CANFD FlexCAN instances, defined in constructor, defaults to 0 */
-    constexpr static std::uint_fast8_t S32K_CANFD_Count = XXXXXXXXXXXXXXXXXXXXXX;
+    constexpr static std::uint_fast8_t S32K_CANFD_Count = S32K_CANFD_Instances_Number[ ( (SIM->SDID) &
+                                                          (SIM_SDID_DERIVATE_MASK) ) >> SIM_SDID_DERIVATE_SHIFT];
     
     /* Lookup table for NVIC IRQ numbers for each FlexCAN instance */
     constexpr static std::uint32_t S32K_FlexCAN_NVIC_Indices[][2u] = S32K_FlexCAN_NVIC_Indices = {{2u,0x20000},
                                                                                                   {2u,0x1000000},
                                                                                                   {2u,0x80000000}};
-
-    /* Intermediate buffer for ISR reception with static memory pool for each instance */
-    std::deque<FrameType, platform::PoolAllocator< S32K_Frame_Capacity, 
-                                                   sizeof(FrameType)> > frame_ISRbuffer_[ S32K_CANFD_Count ];
 
     /* Array of FlexCAN instances for dereferencing from */
     constexpr static CAN_Type * FlexCAN[] = CAN_BASE_PTRS;
@@ -294,13 +278,13 @@ public:
         if( isSuccess(Status) )
         {
             /* Check if the ISR buffer isn't empty */
-            if( !frame_ISRbuffer_[ interface_index-1 ].empty() )
+            if( !g_frame_ISRbuffer[ interface_index-1 ].empty() )
             {
                 /* Get the front element of the queue buffer */
-                out_frames[0] = frame_ISRbuffer_[ interface_index-1 ].front();
+                out_frames[0] = g_frame_ISRbuffer[ interface_index-1 ].front();
 
                 /* Pop the front element of the queue buffer */
-                frame_ISRbuffer_[ interface_index-1 ].pop_front();
+                g_frame_ISRbuffer[ interface_index-1 ].pop_front();
 
                 /* Default minimal RX number of frames read */
                 out_frames_read = MaxRxFrames;
@@ -767,7 +751,7 @@ public:
             MB_index = 6;
 
         /* Receive a frame only if the buffer its under its capacity */
-        if (frame_ISRbuffer_[instance].get_allocator().max_size() <= S32K_Frame_Capacity)
+        if (g_frame_ISRbuffer[instance].get_allocator().max_size() <= S32K_Frame_Capacity)
         {
             /* Parse the Message buffer, reading the control and status word locks the MB */
          
@@ -805,7 +789,7 @@ public:
             CAN::Frame< CAN::TypeFD::MaxFrameSizeBytes> FrameISR(id_ISR,data_ISR_byte,dlc_ISR,timestamp_ISR);
 
             /* Insert the frame into the queue */
-            frame_ISRbuffer_[instance].push_back(FrameISR);
+            g_frame_ISRbuffer[instance].push_back(FrameISR);
         }
 
         /* Unlock the MB by reading the timer register */
