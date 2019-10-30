@@ -454,9 +454,6 @@ public:
 class S32K_InterfaceManager : private InterfaceManager< S32K_InterfaceGroup, S32K_InterfaceGroup* >{
 private:
 
-    /* Object member created from manager instantiation */
-    InterfaceGroupType S32K_InterfaceGroupObj;
-
     /* Number of filters supported by a single FlexCAN instace */
     constexpr static std::uint8_t S32K_Filter_Count = 5u;
 
@@ -467,6 +464,9 @@ private:
     constexpr static std::size_t S32K_Frame_Capacity = 500u;
 
 public:
+ 
+    /* S32K_InterfaceGroup type object member which address is returned from the next factory method */
+    InterfaceGroupType S32K_InterfaceGroupObj;
 
     /**
      * Initializes the peripherals needed for libuavcan driver layer in current MCU 
