@@ -487,8 +487,8 @@ public:
       out_group = nullptr;
 
       /* Input validation */
-        static_assert(filter_config_length <= S32K_Filter_Count,
-                      "filter_config_length argument is greater than the curent supported number of filters.");
+      static_assert(filter_config_length <= S32K_Filter_Count,
+                    "filter_config_length argument is greater than the curent supported number of filters.");
 
       if( isSuccess(Status) )
       {
