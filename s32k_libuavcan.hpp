@@ -53,7 +53,7 @@ namespace media
 {
 
 /* Lookup table for the number of CAN-FD capable FlexCAN instances in each S32k14x MCU */
-constexpr static std::uint8_t S32K_CANFD_Instances_Number = {0,0,1u,0,1u,0,2u,0,3u};
+constexpr static std::uint8_t S32K_CANFD_Instances_Number[9] = {0,0,1u,0,1u,0,2u,0,3u};
     
 /* Intermediate buffer for ISR reception with static memory pool for each instance */
 std::deque<FrameType, platform::PoolAllocator< S32K_Frame_Capacity, sizeof(FrameType)> > 
