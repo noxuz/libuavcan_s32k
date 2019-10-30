@@ -54,9 +54,12 @@ namespace media
 
 /* Lookup table for the number of CAN-FD capable FlexCAN instances in each S32k14x MCU */
 constexpr static std::uint8_t S32K_CANFD_Instances_Number[9] = {0,0,1u,0,1u,0,2u,0,3u};
+
+/* Frame capacity for the intermediate ISR buffer */
+constexpr static std::size_t S32K_Frame_Capacity = 500u;
     
 /* Intermediate buffer for ISR reception with static memory pool for each instance */
-std::deque<FrameType, platform::PoolAllocator< S32K_Frame_Capacity, sizeof(FrameType)> > 
+std::deque< CAN::Frame<CAN::TypeFD::MaxFrameSizeBytes> , platform::memory::PoolAllocator< S32K_Frame_Capacity, sizeof(CAN::Frame<CAN::TypeFD::MaxFrameSizeBytes>)> > 
     g_frame_ISRbuffer[ S32K_CANFD_Instances_Number[( (SIM->SDID)&(SIM_SDID_DERIVATE_MASK) )>>SIM_SDID_DERIVATE_SHIFT] ];
                                                              
 /**
@@ -459,9 +462,6 @@ private:
 
     /* Lookup table for FlexCAN indices in PCC register */
     constexpr static std::uint8_t PCC_FlexCAN_Index[] = {36u, 37u, 43u};
-
-    /* Frame capacity for the intermediate ISR buffer */
-    constexpr static std::size_t S32K_Frame_Capacity = 500u;
 
 public:
  
