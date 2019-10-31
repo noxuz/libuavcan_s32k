@@ -72,6 +72,96 @@ constexpr static std::size_t S32K_Frame_Capacity = 500u;
 /* Intermediate buffer for ISR reception with static memory pool for each instance */
 std::deque< CAN::Frame<CAN::TypeFD::MaxFrameSizeBytes> , platform::memory::PoolAllocator< S32K_Frame_Capacity, 
                             sizeof(CAN::Frame<CAN::TypeFD::MaxFrameSizeBytes>)> > g_frame_ISRbuffer[ S32K_CANFD_Count ];
+    
+/* Number of filters supported by a single FlexCAN instance */
+constexpr static std::uint8_t S32K_Filter_Count = 5u;
+
+/* Lookup table for NVIC IRQ numbers for each FlexCAN instance */
+constexpr static std::uint32_t S32K_FlexCAN_NVIC_Indices[][2u] = {{2u,0x20000},
+                                                                  {2u,0x1000000},
+                                                                  {2u,0x80000000}};
+
+/* Array of FlexCAN instances for dereferencing from */
+constexpr static CAN_Type * FlexCAN[] = CAN_BASE_PTRS;
+
+
+/**
+ * Function for block polling a bit flag until its set with a timeout of 1 second using a LPIT timer
+ *
+ * @param flagRegister Register where the flag is located.
+ * @param flagMask Mask to AND'nd with the register for isolating the flag.
+ */
+libuavcan::Result flagPollTimeout_Set(volatile std::uint32_t &flagRegister, std::uint32_t flag_Mask) 
+{
+    constexpr std::uint32_t cycles_timeout = 0xFFFFF; /* Timeout of 1/(1Mhz) * 2^20 = 1.04 seconds approx */
+    volatile  std::uint32_t delta          = 0;       /* Declaration of delta for comparision */
+
+    /* Disable LPIT channel 3 for loading */
+    LPIT0->CLRTEN |= LPIT_CLRTEN_CLR_T_EN_3(1);
+
+    /* Load LPIT with its maximum value */
+    LPIT0->TMR[3].TVAL = LPIT_TMR_CVAL_TMR_CUR_VAL_MASK;
+
+    /* Enable LPIT channel 3 for timeout start */
+    LPIT0->SETTEN |= LPIT_SETTEN_SET_T_EN_3(1);
+
+    /* Start of timed block */
+    while( delta<cycles_timeout )
+    {
+        /* Check if the flag has been set */
+        if (flagRegister & flag_Mask)
+        {
+            return libuavcan::Result::Success;
+        }
+
+        /* Get current value of delta */
+        delta = LPIT_TMR_CVAL_TMR_CUR_VAL_MASK - (LPIT0->TMR[3].CVAL);
+
+    }
+
+    /* If this section is reached, means timeout ocurred and return error status is returned */
+    return libuavcan::Result::Failure;
+}
+
+
+/**
+ * Function for block polling a bit flag until its cleared with a timeout of 1 second using a LPIT timer
+ *
+ * @param flagRegister Register where the flag is located.
+ * @param flagMask Mask to AND'nd with the register for isolating the flag.
+ */
+libuavcan::Result flagPollTimeout_Clear(volatile std::uint32_t &flagRegister, std::uint32_t flag_Mask) 
+{
+    constexpr std::uint32_t cycles_timeout = 0xFFFFF;  /* Timeout of 1/(1Mhz) * 2^20 = 1.04 seconds approx */
+    volatile  std::uint32_t delta          = 0;        /* Declaration of delta for comparision */
+
+    /* Disable LPIT channel 3 for loading */
+    LPIT0->CLRTEN |= LPIT_CLRTEN_CLR_T_EN_3(1);
+
+    /* Load LPIT with its maximum value */
+    LPIT0->TMR[3].TVAL = LPIT_TMR_CVAL_TMR_CUR_VAL_MASK;
+
+    /* Enable LPIT channel 3 for timeout start */
+    LPIT0->SETTEN |= LPIT_SETTEN_SET_T_EN_3(1);
+
+    /* Start of timed block */
+    while( delta<cycles_timeout )
+    {
+        /* Check if the flag has been set */
+        if (!(flagRegister & flag_Mask))
+        {
+            return libuavcan::Result::Success;
+        }
+
+        /* Get current value of delta */
+        delta = LPIT_TMR_CVAL_TMR_CUR_VAL_MASK - (LPIT0->TMR[3].CVAL);
+
+    }
+
+    /* If this section is reached, means timeout ocurred and return error status is returned */
+    return libuavcan::Result::Failure;
+}
+
                                                              
 /**
  * S32K CanFD driver layer InterfaceGroup
@@ -83,97 +173,6 @@ std::deque< CAN::Frame<CAN::TypeFD::MaxFrameSizeBytes> , platform::memory::PoolA
  * MaxRxFrames = 1 (default)
  */
 class S32K_InterfaceGroup : public InterfaceGroup< CAN::Frame< CAN::TypeFD::MaxFrameSizeBytes> >{
-    
-protected:
-    
-    /* Lookup table for NVIC IRQ numbers for each FlexCAN instance */
-    constexpr static std::uint32_t S32K_FlexCAN_NVIC_Indices[][2u] = {{2u,0x20000},
-                                                                      {2u,0x1000000},
-                                                                      {2u,0x80000000}};
-
-    /* Array of FlexCAN instances for dereferencing from */
-    constexpr static CAN_Type * FlexCAN[] = CAN_BASE_PTRS;
-    
-    /* Number of filters supported by a single FlexCAN instance */
-    constexpr static std::uint8_t S32K_Filter_Count = 5u;
-    
-    /**
-     * Function for block polling a bit flag until its set with a timeout of 1 second using a LPIT timer
-     *
-     * @param flagRegister Register where the flag is located.
-     * @param flagMask Mask to AND'nd with the register for isolating the flag.
-     */
-    libuavcan::Result flagPollTimeout_Set(volatile std::uint32_t &flagRegister, std::uint32_t flag_Mask) const
-    {
-        constexpr std::uint32_t cycles_timeout = 0xFFFFF; /* Timeout of 1/(1Mhz) * 2^20 = 1.04 seconds approx */
-        volatile  std::uint32_t delta          = 0;       /* Declaration of delta for comparision */
-
-        /* Disable LPIT channel 3 for loading */
-        LPIT0->CLRTEN |= LPIT_CLRTEN_CLR_T_EN_3(1);
-
-        /* Load LPIT with its maximum value */
-        LPIT0->TMR[3].TVAL = LPIT_TMR_CVAL_TMR_CUR_VAL_MASK;
-
-        /* Enable LPIT channel 3 for timeout start */
-        LPIT0->SETTEN |= LPIT_SETTEN_SET_T_EN_3(1);
-
-        /* Start of timed block */
-        while( delta<cycles_timeout )
-        {
-            /* Check if the flag has been set */
-            if (flagRegister & flag_Mask)
-            {
-                return libuavcan::Result::Success;
-            }
-
-            /* Get current value of delta */
-            delta = LPIT_TMR_CVAL_TMR_CUR_VAL_MASK - (LPIT0->TMR[3].CVAL);
-
-        }
-
-        /* If this section is reached, means timeout ocurred and return error status is returned */
-        return libuavcan::Result::Failure;
-    }
-
-
-    /**
-     * Function for block polling a bit flag until its cleared with a timeout of 1 second using a LPIT timer
-     *
-     * @param flagRegister Register where the flag is located.
-     * @param flagMask Mask to AND'nd with the register for isolating the flag.
-     */
-    libuavcan::Result flagPollTimeout_Clear(volatile std::uint32_t &flagRegister, std::uint32_t flag_Mask) const
-    {
-        constexpr std::uint32_t cycles_timeout = 0xFFFFF;  /* Timeout of 1/(1Mhz) * 2^20 = 1.04 seconds approx */
-        volatile  std::uint32_t delta          = 0;        /* Declaration of delta for comparision */
-
-        /* Disable LPIT channel 3 for loading */
-        LPIT0->CLRTEN |= LPIT_CLRTEN_CLR_T_EN_3(1);
-
-        /* Load LPIT with its maximum value */
-        LPIT0->TMR[3].TVAL = LPIT_TMR_CVAL_TMR_CUR_VAL_MASK;
-
-        /* Enable LPIT channel 3 for timeout start */
-        LPIT0->SETTEN |= LPIT_SETTEN_SET_T_EN_3(1);
-
-        /* Start of timed block */
-        while( delta<cycles_timeout )
-        {
-            /* Check if the flag has been set */
-            if (!(flagRegister & flag_Mask))
-            {
-                return libuavcan::Result::Success;
-            }
-
-            /* Get current value of delta */
-            delta = LPIT_TMR_CVAL_TMR_CUR_VAL_MASK - (LPIT0->TMR[3].CVAL);
-
-        }
-
-        /* If this section is reached, means timeout ocurred and return error status is returned */
-        return libuavcan::Result::Failure;
-    }
-    
 public:
 
     /* Size in words (4 bytes) of the offset between message buffers */
@@ -592,7 +591,7 @@ public:
       {
         /* LPIT0 channel initialization for timeout timer */
         PCC->PCCn[PCC_LPIT_INDEX] |= PCC_PCCn_CGC(1); /* Clock gating to LPIT module */
-        SCG->SIRCDIV |= SCG_SIRCDIV_SIRCDIV2(4)       /* Enable and divide by 8, 1Mhz */
+        SCG->SIRCDIV |= SCG_SIRCDIV_SIRCDIV2(4);      /* Enable and divide by 8, 1Mhz */
         PCC->PCCn[PCC_LPIT_INDEX] |= PCC_PCCn_PCS(2); /* Enable and select SIRCDIV2_CLK (8Mhz) */
         LPIT0->MCR |= LPIT_MCR_M_CEN(1);              /* Enable module for setup */
 
