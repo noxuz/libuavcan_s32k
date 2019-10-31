@@ -47,20 +47,31 @@
 /* STL queue for the intermediate ISR buffer */
 #include <deque>
 
+#if defined(MCU_S32K142) || defined(MCU_S32K144)
+	#define TARGET_S32K_CANFD_COUNT    (1u)
+#elseif defined(MCU_S32K146)
+	#define TARGET_S32K_CANFD_COUNT	   (2u)
+#elseif defined(MCU_S32K148)
+	#define TARGET_S32K_CANFD_COUNT	   (3u)
+#else
+	#error "No NXP S32K compatible MCU header file included"
+#endif
+
+
 namespace libuavcan
 {
 namespace media
 {
 
-/* Lookup table for the number of CAN-FD capable FlexCAN instances in each S32k14x MCU */
-constexpr static std::uint8_t S32K_CANFD_Instances_Number[9] = {0,0,1u,0,1u,0,2u,0,3u};
+/* Number of capable CANFD FlexCAN instances, defined in constructor, defaults to 0 */
+constexpr static std::uint_fast8_t S32K_CANFD_Count = TARGET_S32K_CANFD_COUNT;
 
 /* Frame capacity for the intermediate ISR buffer */
 constexpr static std::size_t S32K_Frame_Capacity = 500u;
     
 /* Intermediate buffer for ISR reception with static memory pool for each instance */
-std::deque< CAN::Frame<CAN::TypeFD::MaxFrameSizeBytes> , platform::memory::PoolAllocator< S32K_Frame_Capacity, sizeof(CAN::Frame<CAN::TypeFD::MaxFrameSizeBytes>)> > 
-    g_frame_ISRbuffer[ S32K_CANFD_Instances_Number[( (SIM->SDID)&(SIM_SDID_DERIVATE_MASK) )>>SIM_SDID_DERIVATE_SHIFT] ];
+std::deque< CAN::Frame<CAN::TypeFD::MaxFrameSizeBytes> , platform::memory::PoolAllocator< S32K_Frame_Capacity, 
+							sizeof(CAN::Frame<CAN::TypeFD::MaxFrameSizeBytes>)> > g_frame_ISRbuffer[ S32K_CANFD_Count ];
                                                              
 /**
  * S32K CanFD driver layer InterfaceGroup
@@ -74,10 +85,6 @@ std::deque< CAN::Frame<CAN::TypeFD::MaxFrameSizeBytes> , platform::memory::PoolA
 class S32K_InterfaceGroup : public InterfaceGroup< CAN::Frame< CAN::TypeFD::MaxFrameSizeBytes> >{
     
 protected:
-
-    /* Number of capable CANFD FlexCAN instances, defined in constructor, defaults to 0 */
-    constexpr static std::uint_fast8_t S32K_CANFD_Count = S32K_CANFD_Instances_Number[ ( (SIM->SDID) &
-                                                          (SIM_SDID_DERIVATE_MASK) ) >> SIM_SDID_DERIVATE_SHIFT];
     
     /* Lookup table for NVIC IRQ numbers for each FlexCAN instance */
     constexpr static std::uint32_t S32K_FlexCAN_NVIC_Indices[][2u] = {{2u,0x20000},
