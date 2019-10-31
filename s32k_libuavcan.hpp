@@ -94,6 +94,9 @@ protected:
     /* Array of FlexCAN instances for dereferencing from */
     constexpr static CAN_Type * FlexCAN[] = CAN_BASE_PTRS;
     
+    /* Number of filters supported by a single FlexCAN instance */
+    constexpr static std::uint8_t S32K_Filter_Count = 5u;
+    
 public:
 
     /* Size in words (4 bytes) of the offset between message buffers */
@@ -123,7 +126,7 @@ public:
      * @return libuavcan::Result::BadArgument if interface_index or frames_len are out of bound.
      */
     virtual libuavcan::Result write(std::uint_fast8_t    interface_index,
-                                         const FrameType (&frames)[MaxTxFrames],
+                                         const FrameType (&frames)[TxFramesLen],
                                          std::size_t     frames_len,
                                          std::size_t&    out_frames_written) override
         {
@@ -131,7 +134,7 @@ public:
         libuavcan::Result Status = libuavcan::Result::Success;
 
         /* Input validation */
-        if((frames_len > MaxTxFrames) || (interface_index > S32K_CANFD_Count) )
+        if((frames_len > TxFramesLen) || (interface_index > S32K_CANFD_Count) )
         {
             Status = libuavcan::Result::BadArgument;
         }
@@ -190,7 +193,7 @@ public:
                  * Counter Time Stamp  (TIME STAMP) = 0 ( Handled by hardware )
                  */
                 FlexCAN[ interface_index-1 ]->RAMn[0*MB_Size_Words + 0] = CAN_RAMn_DATA_BYTE_1(0x60)          |
-                                                                          CAN_WMBn_CS_DLC(frames[0].getdlc()) |
+                                                                          CAN_WMBn_CS_DLC(frames[0].getDLC()) |
                                                                           CAN_RAMn_DATA_BYTE_0(0xCC);
 
                 /* Set the return status as successfull */
@@ -247,7 +250,7 @@ public:
                  * Counter Time Stamp  (TIME STAMP) = 0  ( Handled by hardware )
                  */
                 FlexCAN[ interface_index-1 ]->RAMn[1*MB_Size_Words + 0] = CAN_RAMn_DATA_BYTE_1(0x60)          |
-                                                                          CAN_WMBn_CS_DLC(frames[0].getdlc()) |
+                                                                          CAN_WMBn_CS_DLC(frames[0].getDLC()) |
                                                                           CAN_RAMn_DATA_BYTE_0(0xCC);
 
                 /* Set the return status as successfull */
@@ -275,7 +278,7 @@ public:
      * @return libuavcan::Result::BadArgument If interface_index is out of bound. 
      */
     virtual libuavcan::Result read(std::uint_fast8_t interface_index,
-                                        FrameType    (&out_frames)[MaxRxFrames],
+                                        FrameType    (&out_frames)[RxFramesLen],
                                         std::size_t& out_frames_read) override
         {
         /* Initialize return value and out_frames_read output reference value */
@@ -300,7 +303,7 @@ public:
                 g_frame_ISRbuffer[ interface_index-1 ].pop_front();
 
                 /* Default minimal RX number of frames read */
-                out_frames_read = MaxRxFrames;
+                out_frames_read = RxFramesLen;
 
                 /* If read is successful, status is success */
                 Status = libuavcan::Result::Success;
@@ -469,9 +472,6 @@ public:
  */
 class S32K_InterfaceManager : private InterfaceManager< S32K_InterfaceGroup, S32K_InterfaceGroup* >{
 private:
-
-    /* Number of filters supported by a single FlexCAN instace */
-    constexpr static std::uint8_t S32K_Filter_Count = 5u;
 
     /* Lookup table for FlexCAN indices in PCC register */
     constexpr static std::uint8_t PCC_FlexCAN_Index[] = {36u, 37u, 43u};
