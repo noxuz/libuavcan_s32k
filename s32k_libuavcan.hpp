@@ -48,13 +48,13 @@
 #include <deque>
 
 #if defined(MCU_S32K142) || defined(MCU_S32K144)
-	#define TARGET_S32K_CANFD_COUNT    (1u)
-#elseif defined(MCU_S32K146)
-	#define TARGET_S32K_CANFD_COUNT	   (2u)
-#elseif defined(MCU_S32K148)
-	#define TARGET_S32K_CANFD_COUNT	   (3u)
+    #define TARGET_S32K_CANFD_COUNT    (1u)
+#elif defined(MCU_S32K146)
+    #define TARGET_S32K_CANFD_COUNT    (2u)
+#elif defined(MCU_S32K148)
+    #define TARGET_S32K_CANFD_COUNT    (3u)
 #else
-	#error "No NXP S32K compatible MCU header file included"
+    #error "No NXP S32K compatible MCU header file included"
 #endif
 
 
@@ -71,7 +71,7 @@ constexpr static std::size_t S32K_Frame_Capacity = 500u;
     
 /* Intermediate buffer for ISR reception with static memory pool for each instance */
 std::deque< CAN::Frame<CAN::TypeFD::MaxFrameSizeBytes> , platform::memory::PoolAllocator< S32K_Frame_Capacity, 
-							sizeof(CAN::Frame<CAN::TypeFD::MaxFrameSizeBytes>)> > g_frame_ISRbuffer[ S32K_CANFD_Count ];
+                            sizeof(CAN::Frame<CAN::TypeFD::MaxFrameSizeBytes>)> > g_frame_ISRbuffer[ S32K_CANFD_Count ];
                                                              
 /**
  * S32K CanFD driver layer InterfaceGroup
@@ -89,7 +89,7 @@ protected:
     /* Lookup table for NVIC IRQ numbers for each FlexCAN instance */
     constexpr static std::uint32_t S32K_FlexCAN_NVIC_Indices[][2u] = {{2u,0x20000},
                                                                       {2u,0x1000000},
-																	  {2u,0x80000000}};
+                                                                      {2u,0x80000000}};
 
     /* Array of FlexCAN instances for dereferencing from */
     constexpr static CAN_Type * FlexCAN[] = CAN_BASE_PTRS;
@@ -709,9 +709,12 @@ public:
             {
                 /* Poll for Low Power ACK, waits for current transmission/reception to finish */
                 Status = flagPollTimeout_Set(FlexCAN[i]->MCR,CAN_MCR_LPMACK_MASK);
-
-                /* Disable FlexCAN clock gating */
-                PCC->PCCn[ PCC_FlexCAN_Index[i] ] &= ~PCC_PCCn_CGC_MASK;
+                
+                if( isSuccess(Status) )
+                {
+                    /* Disable FlexCAN clock gating */
+                    PCC->PCCn[ PCC_FlexCAN_Index[i] ] &= ~PCC_PCCn_CGC_MASK;
+                }
             }
 
         }
@@ -788,8 +791,8 @@ public:
             for(std::uint8_t i = 0; i < (payloadLength_ISR & 0x3); i++)
             {
                 data_ISR_byte[ payloadLength_ISR - (payloadLength_ISR & 0x3) + i] = 
-                                                  ( FlexCAN[instance]->RAMn[MB_index*S32K_InterfaceGroup::MB_Data_Offset + MB_Data_Offset + 
-                                                  (payloadLength_ISR >> 2)] & (0xFF << ((3-i) << 3)) ) >> ((3-i) << 3);
+                               ( FlexCAN[instance]->RAMn[MB_index*S32K_InterfaceGroup::MB_Data_Offset + MB_Data_Offset +  
+                                                   (payloadLength_ISR >> 2)] & (0xFF << ((3-i) << 3)) ) >> ((3-i) << 3);
             }
 
             /* Create Frame object with constructor */
