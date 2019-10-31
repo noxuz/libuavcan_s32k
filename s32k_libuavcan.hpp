@@ -120,6 +120,7 @@ public:
      * @param  out_frames_written
      *                          Will return MaxTxFrames in current implementation if the frame was sent successfully
      * @return libuavcan::Result::Success if all frames were written.
+     * @return libuavcan::Result::BadArgument if interface_index or frames_len are out of bound.
      */
     virtual libuavcan::Result write(std::uint_fast8_t interface_index,
                                          const FrameT (&frames)[MaxTxFrames],
@@ -130,11 +131,10 @@ public:
         libuavcan::Result Status = libuavcan::Result::Success;
 
         /* Input validation */
-        static_assert(frames_len <= MaxTxFrames,
-                      "frames_len argument is greater than what the current implementation supports.");
-        
-        static_assert(interface_index <= S32K_CANFD_Count,
-                      "interface_index argument is greater than the number of available interfaces.");
+        if((frames_len > MaxTxFrames) || (interface_index > S32K_CANFD_Count) )
+        {
+            Status = libuavcan::Result::BadArgument;
+        }
 
         if( isSuccess( Status ) )
         {
@@ -272,6 +272,7 @@ public:
      * @param  out_frames       A buffer of frames to read.
      * @param  out_frames_read  On output the number of frames read into the out_frames array.
      * @return libuavcan::Result::Success If no errors occurred.
+     * @return libuavcan::Result::BadArgument If interface_index is out of bound. 
      */
     virtual libuavcan::Result read(std::uint_fast8_t interface_index,
                                         FrameT       (&out_frames)[MaxRxFrames],
@@ -282,8 +283,10 @@ public:
         out_frames_read = 0;
 
         /* Input validation */
-        static_assert(interface_index <= S32K_CANFD_Count,
-                      "interface_index argument is greater than the number of available interfaces.");
+        if(interface_index > S32K_CANFD_Count)
+        {
+            Status = libuavcan::Result::BadArgument;
+        }
 
         if( isSuccess(Status) )
         {
@@ -318,6 +321,7 @@ public:
      * @param  filter_config_length  The length of the @p filter_config argument.
      * @return libuavcan::Result::Success if the group's receive filtering was successfully reconfigured.
      * @return libuavcan::Result::Failure if a register didn't get configured as desired.
+     * @return libuavcan::Result::BadArgument if filter_config_length is out of bound.
      */
     virtual libuavcan::Result reconfigureFilters(const typename FrameType::Filter* filter_config,
                                                                 std::size_t        filter_config_length) override
@@ -326,9 +330,11 @@ public:
         libuavcan::Result Status = libuavcan::Result::Success;
 
         /* Input validation */
-        static_assert(filter_config_length <= S32K_Filter_Count,
-                      "filter_config_length argument is greater than the curent supported number of filters.");
-
+        if(filter_config_length > S32K_Filter_Count)
+        {
+            Status = libuavcan::Result::BadArgument;
+        }
+ 
         if( isSuccess(Status) )
         {
             for(std::uint8_t i = 0; i < S32K_CANFD_Count; i++)
@@ -484,6 +490,7 @@ public:
      * @return libuavcan::Result::Success if the group was successfully started and a valid pointer was returned.
      * @return libuavcan::Result::Failure if the initialization fails at some point.
      *         The caller should assume that @p out_group is an invalid pointer if any failure is returned.
+     * @return libuavcan::Result::BadArgument if filter_config_length is out of bound. 
      */
     virtual libuavcan::Result startInterfaceGroup(const typename InterfaceGroupType::FrameType::Filter* filter_config,
                                                                  std::size_t                    filter_config_length,
@@ -494,8 +501,10 @@ public:
       out_group = nullptr;
 
       /* Input validation */
-      static_assert(filter_config_length <= S32K_Filter_Count,
-                    "filter_config_length argument is greater than the curent supported number of filters.");
+      if( filter_config_length > S32K_Filter_Count )
+      {
+          Status = libuavcan::Result::BadArgument;
+      }
 
       if( isSuccess(Status) )
       {
