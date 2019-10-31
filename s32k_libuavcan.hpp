@@ -445,7 +445,7 @@ public:
             }
 
             /* Get current value of delta */
-            delta = LPIT_TMR_CVAL_TMR_CUR_VAL_MAS - (LPIT0->TMR[3].CVAL);
+            delta = LPIT_TMR_CVAL_TMR_CUR_VAL_MASK - (LPIT0->TMR[3].CVAL);
 
         }
 
