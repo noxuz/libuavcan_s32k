@@ -122,10 +122,10 @@ public:
      * @return libuavcan::Result::Success if all frames were written.
      * @return libuavcan::Result::BadArgument if interface_index or frames_len are out of bound.
      */
-    virtual libuavcan::Result write(std::uint_fast8_t interface_index,
-                                         const FrameT (&frames)[MaxTxFrames],
-                                         std::size_t  frames_len,
-                                         std::size_t& out_frames_written) override
+    virtual libuavcan::Result write(std::uint_fast8_t    interface_index,
+                                         const FrameType (&frames)[MaxTxFrames],
+                                         std::size_t     frames_len,
+                                         std::size_t&    out_frames_written) override
         {
         /* Initialize return value status */
         libuavcan::Result Status = libuavcan::Result::Success;
@@ -275,7 +275,7 @@ public:
      * @return libuavcan::Result::BadArgument If interface_index is out of bound. 
      */
     virtual libuavcan::Result read(std::uint_fast8_t interface_index,
-                                        FrameT       (&out_frames)[MaxRxFrames],
+                                        FrameType    (&out_frames)[MaxRxFrames],
                                         std::size_t& out_frames_read) override
         {
         /* Initialize return value and out_frames_read output reference value */
