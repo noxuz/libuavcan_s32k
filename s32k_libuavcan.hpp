@@ -67,7 +67,7 @@ namespace media
 constexpr static std::uint_fast8_t S32K_CANFD_Count = TARGET_S32K_CANFD_COUNT;
 
 /* Frame capacity for the intermediate ISR buffer */
-constexpr static std::size_t S32K_Frame_Capacity = 500u;
+constexpr static std::size_t S32K_Frame_Capacity = 100u;
     
 /* Intermediate buffer for ISR reception with static memory pool for each instance */
 std::deque< CAN::Frame<CAN::TypeFD::MaxFrameSizeBytes> , platform::memory::PoolAllocator< S32K_Frame_Capacity, 
@@ -833,7 +833,7 @@ public:
         std::uint64_t LPIT_timestamp_ISR = static_cast<std::uint64_t>( ( static_cast<std::uint64_t>
                                        (0xFFFFFFFF - LPIT0->TMR[1].CVAL) << 32) | (  0xFFFFFFFF - LPIT0->TMR[0].CVAL ));
 
-        libuavcan::time::Monotonic timestamp_ISR = libuavcan::time::Monotonic::fromMicrosecond(LPIT_timestamp_ISR);
+        time::Monotonic timestamp_ISR = time::Monotonic::fromMicrosecond(LPIT_timestamp_ISR);
 
         /* Initialize variable for finding which MB received */
         std::uint8_t MB_index = 0;
@@ -858,15 +858,18 @@ public:
         {
             /* Parse the Message buffer, reading the control and status word locks the MB */
          
-            /* Get dlc and convert to data length in bytes */
-            CAN::FrameDLC dlc_ISR = ((FlexCAN[instance]->RAMn[MB_index*S32K_InterfaceGroup::MB_Data_Offset + 0])
+            /* Get the raw DLC from the message buffer that received a frame */
+            std::uint32_t dlc_ISR_raw = ((FlexCAN[instance]->RAMn[MB_index*S32K_InterfaceGroup::MB_Size_Words + 0])
                                                               & CAN_WMBn_CS_DLC_MASK ) >> CAN_WMBn_CS_DLC_SHIFT;
-                                                                                          
+
+            /* Create CAN::FrameDLC type variable from the raw dlc */
+            CAN::FrameDLC dlc_ISR = CAN::FrameDLC(dlc_ISR_raw);
+
             /* Convert from dlc to data length in bytes */
-            std::uint_fast8_t payloadLength_ISR = CAN::dlcToLength(dlc_ISR);
+            std::uint8_t payloadLength_ISR = S32K_InterfaceGroup::FrameType::dlcToLength(dlc_ISR);
 
             /* Get the id */
-            std::uint32_t id_ISR = (FlexCAN[instance]->RAMn[MB_index*S32K_InterfaceGroup::MB_Data_Offset + 1]) &
+            std::uint32_t id_ISR = (FlexCAN[instance]->RAMn[MB_index*S32K_InterfaceGroup::MB_Size_Words + 1]) &
                                                                                           CAN_WMBn_ID_ID_MASK;
 
             /* Array for parsing from native uint32_t to uint8_t */
@@ -875,7 +878,7 @@ public:
             /* Parse the full words of the MB in bytes */
             for(std::uint8_t i = 0; i < payloadLength_ISR; i++)
             {
-                data_ISR_byte[i] = ( FlexCAN[instance]->RAMn[MB_index*S32K_InterfaceGroup::MB_Data_Offset +
+                data_ISR_byte[i] = ( FlexCAN[instance]->RAMn[MB_index*S32K_InterfaceGroup::MB_Size_Words +
                                                           S32K_InterfaceGroup::MB_Data_Offset + (i >> 2)] &
                                              (0xFF << ((3 - (i & 0x3)) << 3 ) ) ) >> ((3 - (i & 0x3)) << 3);
             }
@@ -884,8 +887,9 @@ public:
             for(std::uint8_t i = 0; i < (payloadLength_ISR & 0x3); i++)
             {
                 data_ISR_byte[ payloadLength_ISR - (payloadLength_ISR & 0x3) + i] = 
-                               ( FlexCAN[instance]->RAMn[MB_index*S32K_InterfaceGroup::MB_Data_Offset + MB_Data_Offset +  
-                                                   (payloadLength_ISR >> 2)] & (0xFF << ((3-i) << 3)) ) >> ((3-i) << 3);
+                                               ( FlexCAN[instance]->RAMn[MB_index*S32K_InterfaceGroup::MB_Data_Offset + 
+                                                         S32K_InterfaceGroup::MB_Data_Offset + (payloadLength_ISR >> 2)]
+                                                                             & (0xFF << ((3-i) << 3)) ) >> ((3-i) << 3);
             }
 
             /* Create Frame object with constructor */
