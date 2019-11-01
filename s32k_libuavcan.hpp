@@ -47,6 +47,7 @@
 /* STL queue for the intermediate ISR buffer */
 #include <deque>
 
+/* Preprocessor conditionals for deducing the number of CANFD FlexCAN instances in target MCU */
 #if defined(MCU_S32K142) || defined(MCU_S32K144)
     #define TARGET_S32K_CANFD_COUNT    (1u)
 #elif defined(MCU_S32K146)
