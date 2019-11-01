@@ -660,7 +660,7 @@ public:
             /* Verify that the least significant 32-bit timer is counting (not locked at 0) */
             if ( isSuccess(Status) )
             {
-              Status = flagPollTimeoutSet(LPIT0->TMR[0],LPIT_TMR_TVAL_TMR_VAL_MASK);
+              Status = flagPollTimeout_Set(LPIT0->TMR[0].CVAL,LPIT_TMR_CVAL_TMR_CUR_VAL_MASK);
 
               /* FlexCAN instances initialization */
               for(std::uint8_t i = 0; i < S32K_CANFD_Count ; i++)
@@ -723,7 +723,7 @@ public:
                   for(std::uint8_t j = 0; j < filter_config_length; j++ )
                   {
                     /* Setup reception MB's mask from input argument */
-                    FlexCAN[i]->RXIMR[j+2] = filter_config[j]->mask;
+                    FlexCAN[i]->RXIMR[j+2] = filter_config[j].mask;
 
                     /* Setup word 0 (4 Bytes) for ith MB
                      * Extended Data Length      (EDL) = 1
@@ -740,13 +740,12 @@ public:
                                                                                   CAN_RAMn_DATA_BYTE_1(0x20);
 
                     /* Setup Message buffers 2-7 29-bit extended ID from parameter */
-                    FlexCAN[i]->RAMn[(j+2)*S32K_InterfaceGroup::MB_Data_Offset + 1] = filter_config[j]->id;
+                    FlexCAN[i]->RAMn[(j+2)*S32K_InterfaceGroup::MB_Data_Offset + 1] = filter_config[j].id;
                   }
 
                   /* Enable interrupt in NVIC for FlexCAN reception with default priority (ID = 81) */
-                  S32_NVIC->ISER[ S32K_InterfaceGroup::S32K_FlexCAN_NVIC_Indices[i][0] ] = 
-                                                                   S32K_InterfaceGroup::S32K_FlexCAN_NVIC_Indices[i][1];
-
+                  S32_NVIC->ISER[ S32K_FlexCAN_NVIC_Indices[i][0] ] = S32K_FlexCAN_NVIC_Indices[i][1];
+                                                                   
                   /* Enable interrupts of reception MB's (0b1111100) */
                   FlexCAN[i]->IMASK1 = CAN_IMASK1_BUF31TO0M(124);
 
@@ -839,6 +838,7 @@ public:
 
         /* Check which MB caused the interrupt */
         switch( FlexCAN[instance]->IFLAG1 )
+        {
         case 0x4:
             MB_index = 2;
         case 0x8:
@@ -849,7 +849,8 @@ public:
             MB_index = 5;
         case 0x40:
             MB_index = 6;
-
+        }
+        
         /* Receive a frame only if the buffer its under its capacity */
         if (g_frame_ISRbuffer[instance].get_allocator().max_size() <= S32K_Frame_Capacity)
         {
@@ -874,7 +875,7 @@ public:
             {
                 data_ISR_byte[i] = ( FlexCAN[instance]->RAMn[MB_index*S32K_InterfaceGroup::MB_Data_Offset +
                                                           S32K_InterfaceGroup::MB_Data_Offset + (i >> 2)] &
-                                             (0xFF << ((3 - (i & 0x3)) << 3 ) ) ) >> ((3 - i & 0x3) << 3);
+                                             (0xFF << ((3 - (i & 0x3)) << 3 ) ) ) >> ((3 - (i & 0x3)) << 3);
             }
 
             /* Parse remaining bytes that don't complete up to a word if there are */
