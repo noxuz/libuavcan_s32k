@@ -830,8 +830,10 @@ public:
     static void S32K_libuavcan_ISR(std::uint8_t instance)
     {
         /* Before anything, get a timestamp  */
-        libuavcan::time::Monotonic timestamp_ISR = static_cast<std::uint64_t>( ( static_cast<std::uint64_t>
+        std::uint64_t LPIT_timestamp_ISR = static_cast<std::uint64_t>( ( static_cast<std::uint64_t>
                                        (0xFFFFFFFF - LPIT0->TMR[1].CVAL) << 32) | (  0xFFFFFFFF - LPIT0->TMR[0].CVAL ));
+
+        libuavcan::time::Monotonic timestamp_ISR = libuavcan::time::Monotonic::fromMicrosecond(LPIT_timestamp_ISR);
 
         /* Initialize variable for finding which MB received */
         std::uint8_t MB_index = 0;
