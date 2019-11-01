@@ -771,7 +771,7 @@ public:
         }
       }
 
-      /* If function ended successfully, return address of private object member */
+      /* If function ended successfully, return address of object member of type S32K_InterfaceGroup */
       out_group = &S32K_InterfaceGroupObj;
 
       /* Return code for start of S32K_InterfaceGroup */
