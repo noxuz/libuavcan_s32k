@@ -84,6 +84,9 @@ constexpr static std::uint32_t S32K_FlexCAN_NVIC_Indices[][2u] = {{2u,0x20000},
 
 /* Array of FlexCAN instances for dereferencing from */
 constexpr static CAN_Type * FlexCAN[] = CAN_BASE_PTRS;
+    
+/* Lookup table for FlexCAN indices in PCC register */
+constexpr static std::uint8_t PCC_FlexCAN_Index[] = {36u, 37u, 43u};
 
 
 /**
@@ -553,11 +556,6 @@ public:
  * InterfaceGroupPtrT = S32K_InterfaceGroup* (raw pointer)
  */
 class S32K_InterfaceManager : private InterfaceManager< S32K_InterfaceGroup, S32K_InterfaceGroup* >{
-private:
-
-    /* Lookup table for FlexCAN indices in PCC register */
-    constexpr static std::uint8_t PCC_FlexCAN_Index[] = {36u, 37u, 43u};
-
 public:
  
     /* S32K_InterfaceGroup type object member which address is returned from the next factory method */
