@@ -67,8 +67,8 @@ namespace media
 /* Number of capable CANFD FlexCAN instances, defined in constructor, defaults to 0 */
 constexpr static std::uint_fast8_t S32K_CANFD_Count = TARGET_S32K_CANFD_COUNT;
 
-/* Frame capacity for the intermediate ISR buffer */
-constexpr static std::size_t S32K_Frame_Capacity = 100u;
+/* Frame capacity for the intermediate ISR buffer, each frame adds 80 bytes of required .bss memory */
+constexpr static std::size_t S32K_Frame_Capacity = 40u;
     
 /* Intermediate buffer for ISR reception with static memory pool for each instance */
 std::deque< CAN::Frame<CAN::TypeFD::MaxFrameSizeBytes> , platform::memory::PoolAllocator< S32K_Frame_Capacity, 
