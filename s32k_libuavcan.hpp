@@ -509,25 +509,28 @@ public:
         {
             for(std::uint8_t i = 0; i < S32K_CANFD_Count; i++ )
             {
+                /* Get CODE from Control and Status word of each MB */
+                std::uint32_t flagMB0 = (FlexCAN[i]->RAMn[0*MB_Size_Words]) & CAN_RAMn_DATA_BYTE_0(0xF);
+                std::uint32_t flagMB1 = (FlexCAN[i]->RAMn[1*MB_Size_Words]) & CAN_RAMn_DATA_BYTE_0(0xF);
+                std::uint32_t flagMB2 = (FlexCAN[i]->RAMn[2*MB_Size_Words]) & CAN_RAMn_DATA_BYTE_0(0xF);
+                std::uint32_t flagMB3 = (FlexCAN[i]->RAMn[3*MB_Size_Words]) & CAN_RAMn_DATA_BYTE_0(0xF);
+                std::uint32_t flagMB4 = (FlexCAN[i]->RAMn[4*MB_Size_Words]) & CAN_RAMn_DATA_BYTE_0(0xF);
+                std::uint32_t flagMB5 = (FlexCAN[i]->RAMn[5*MB_Size_Words]) & CAN_RAMn_DATA_BYTE_0(0xF);
+                std::uint32_t flagMB6 = (FlexCAN[i]->RAMn[6*MB_Size_Words]) & CAN_RAMn_DATA_BYTE_0(0xF);
+
                 /* If ignore = true, check only RX buffers (2th-6th) */
                 if( ignore_write_available )
                 {
-                    /* Get CODE from Control and Status word of each MB */
-                    std::uint32_t flagMB2 = (FlexCAN[i]->RAMn[2*MB_Size_Words]) & CAN_RAMn_DATA_BYTE_0(0xF);
-                    std::uint32_t flagMB3 = (FlexCAN[i]->RAMn[3*MB_Size_Words]) & CAN_RAMn_DATA_BYTE_0(0xF);
-                    std::uint32_t flagMB4 = (FlexCAN[i]->RAMn[4*MB_Size_Words]) & CAN_RAMn_DATA_BYTE_0(0xF);
-                    std::uint32_t flagMB5 = (FlexCAN[i]->RAMn[5*MB_Size_Words]) & CAN_RAMn_DATA_BYTE_0(0xF);
-                    std::uint32_t flagMB6 = (FlexCAN[i]->RAMn[6*MB_Size_Words]) & CAN_RAMn_DATA_BYTE_0(0xF);
-
-                    /* Any CODE must be 0 */
-                    flag = !flagMB2 || !flagMB3 || !flagMB4 || !flagMB5 || !flagMB6;
+                    /* Any CODE must not be BUSY (0b0001) */
+                    flag = (1 != flagMB2) || (1 != flagMB3) || (1 != flagMB4) || (1 != flagMB5) || (1 != flagMB6);
                 }
 
                 /* All MB's CODE get checked for availability if ignore = true */
                 else
                 {
-                    /* Check inactive message buffer IMB flag, checks code 0 for Rx or 0b1000 for Tx */
-                    flag = (FlexCAN[i]->ESR2 & CAN_ESR2_IMB_MASK);
+                    /* Check inactive message buffer IMB flag, checks CODE not 1 for Rx or 0b1000 for Tx */
+                    flag = (8 == flagMB0) || (8 == flagMB1)||(1 != flagMB2) || (1 != flagMB3) || 
+                           (1 != flagMB4) || (1 != flagMB5) || (1 != flagMB6);
                 }
 
                 if ( flag )
