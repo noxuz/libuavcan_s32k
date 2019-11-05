@@ -735,11 +735,11 @@ public:
                      * Data Length Code          (DLC) = 0 ( Valid for transmission only )
                      * Counter Time Stamp (TIME STAMP) = 0 ( Handled by hardware )
                      */
-                    FlexCAN[i]->RAMn[(j+2)*S32K_InterfaceGroup::MB_Data_Offset] = CAN_RAMn_DATA_BYTE_0(0xC4) |
-                                                                                  CAN_RAMn_DATA_BYTE_1(0x20);
+                    FlexCAN[i]->RAMn[(j+2)*S32K_InterfaceGroup::MB_Size_Words] = CAN_RAMn_DATA_BYTE_0(0xC4) |
+                                                                                 CAN_RAMn_DATA_BYTE_1(0x20);
 
                     /* Setup Message buffers 2-7 29-bit extended ID from parameter */
-                    FlexCAN[i]->RAMn[(j+2)*S32K_InterfaceGroup::MB_Data_Offset + 1] = filter_config[j].id;
+                    FlexCAN[i]->RAMn[(j+2)*S32K_InterfaceGroup::MB_Size_Words + 1] = filter_config[j].id;
                   }
 
                   /* Enable interrupt in NVIC for FlexCAN reception with default priority (ID = 81) */
