@@ -589,10 +589,15 @@ public:
       if( isSuccess(Status) )
       {
         /* LPIT0 channel initialization for timeout timer */
+        SCG->SIRCCSR &= ~SCG_SIRCCSR_SIRCEN(1);       /* Disable SIRC for configuration */
+        SCG->SIRCDIV |= SCG_SIRCDIV_SIRCDIV2(4);      /* Divide by 8 to get 1Mhz */
+        SCG->SIRCCSR |= SCG_SIRCCSR_SIRCEN(1);        /* Enable SIRC back */
+        PCC->PCCn[PCC_LPIT_INDEX] |= PCC_PCCn_PCS(2); /* Select SIRCDIV2_CLK as LPIT source */
         PCC->PCCn[PCC_LPIT_INDEX] |= PCC_PCCn_CGC(1); /* Clock gating to LPIT module */
-        SCG->SIRCDIV |= SCG_SIRCDIV_SIRCDIV2(4);      /* Enable and divide by 8, 1Mhz */
-        PCC->PCCn[PCC_LPIT_INDEX] |= PCC_PCCn_PCS(2); /* Enable and select SIRCDIV2_CLK (8Mhz) */
-        LPIT0->MCR |= LPIT_MCR_M_CEN(1);              /* Enable module for setup */
+        
+
+        LPIT0->MCR |= LPIT_MCR_M_CEN(1) |             /* Enable LPIT for additional setup */
+                      LPIT_MCR_DBG_EN(1);             /* Allow operation in debug mode */ 
 
         /* Select 32-bit peridic timer mode (default) */
         LPIT0->TMR[3].TCTRL |= LPIT_TMR_TCTRL_MODE(0);
