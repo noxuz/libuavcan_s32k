@@ -232,7 +232,7 @@ public:
             std::uint8_t flag = 0; 
 
             /* Check if Tx Message buffer status CODE is inactive (0b1000) and transmit through MB0*/
-            if( 0x8 == CODE_MB0 )
+            if( (0x8 == CODE_MB0) || !CODE_MB0)
             {
                 /* Ensure interrupt flag for MB0 is cleared (write to clear register) */
                 FlexCAN[ interface_index-1 ]->IFLAG1 |= CAN_IFLAG1_BUF0I_MASK; 
@@ -289,7 +289,7 @@ public:
                 flag = 1;
             }
             /* Transmit through MB1 if MB0 was busy */
-            else if ( ( 0x8 == CODE_MB1 ) && !flag )
+            else if ( (( 0x8 == CODE_MB1 ) || !CODE_MB1) && !flag )
             {
                 /* Ensure interurpt flag for MB1 is cleared (write to clear register) */
                 FlexCAN[ interface_index-1 ]->IFLAG1 |= CAN_IFLAG1_BUF4TO1I(1);  
