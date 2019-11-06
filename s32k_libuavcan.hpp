@@ -683,12 +683,9 @@ public:
                   Status = flagPollTimeout_Set(FlexCAN[i]->MCR,CAN_MCR_FRZACK_MASK);
 
                   /* Next configurations are only permitted in freeze mode */
-                  /* Setup maximum number of message buffers as 7, 0th and 1st for transmission and 2nd-6th for RX */
-                  FlexCAN[i]->MCR |= CAN_MCR_MAXMB(6)    |
-                                     CAN_MCR_SRXDIS_MASK | /* Disable self-reception of frames if ID matches */
-                                     CAN_MCR_IRMQ_MASK   | /* Enable individual message buffer masking */
-                                     CAN_MCR_FDEN_MASK   | /* Habilitate CANFD feature */
-                                     CAN_MCR_FRZ_MASK;     /* Enable freeze mode entry when HALT bit is asserted */
+                  FlexCAN[i]->MCR |= CAN_MCR_FDEN_MASK  |      /* Habilitate CANFD feature */
+                                     CAN_MCR_FRZ_MASK;         /* Enable freeze mode entry when HALT bit is asserted */
+                  FlexCAN[i]->CTRL2 |= CAN_CTRL2_ISOCANFDEN_MASK;  /* Activate the use of ISO 11898-1 CAN-FD standard */
 
                   /* CAN Bit Timing (CBT) configuration for a nominal phase of 1 Mbit/s with 80 time quantas,
                      in accordance with Bosch 2012 specification, sample point at 83.75% */
@@ -714,7 +711,6 @@ public:
                                         CAN_FDCTRL_TDCEN_MASK  | /* Enable transceiver delay compensation */
                                         CAN_FDCTRL_TDCOFF(5)   | /* Setup 5 cycles for data phase sampling delay */
                                         CAN_FDCTRL_MBDSR0(3);    /* Setup 64 bytes per message buffer (7 MB's) */
-                  FlexCAN[i]->CTRL2 |= CAN_CTRL2_ISOCANFDEN_MASK;  /* Activate the use of ISO 11898-1 CAN-FD standard */
 
                   /* Message buffers are located in a dedicated RAM inside FlexCAN, they aren't affected by reset,
                    * so they must be explicitly initialized, they total 128 slots of 4 words each, which sum 
@@ -725,9 +721,17 @@ public:
                     FlexCAN[i]->RAMn[j] = 0;
                   }
 
+                  /* Setup maximum number of message buffers as 7, 0th and 1st for transmission and 2nd-7th for RX */
+                  FlexCAN[i]->MCR |= CAN_MCR_MAXMB(6)    |
+                                     CAN_MCR_SRXDIS_MASK | /* Disable self-reception of frames if ID matches */
+                                     CAN_MCR_IRMQ_MASK;    /* Enable individual message buffer masking */
+
                   /* Setup Message buffers 2-7 for reception and set filters */
                   for(std::uint8_t j = 0; j < filter_config_length; j++ )
                   {
+                    /* Setup reception MB's mask from input argument */
+                    FlexCAN[i]->RXIMR[j+2] = filter_config[j].mask;
+
                     /* Setup word 0 (4 Bytes) for ith MB
                      * Extended Data Length      (EDL) = 1
                      * Bit Rate Switch           (BRS) = 1
@@ -744,10 +748,6 @@ public:
 
                     /* Setup Message buffers 2-7 29-bit extended ID from parameter */
                     FlexCAN[i]->RAMn[(j+2)*S32K_InterfaceGroup::MB_Size_Words + 1] = filter_config[j].id;
-                    
-                    /* Setup reception MB's mask from input argument */
-                    FlexCAN[i]->RXIMR[j+2] = filter_config[j].mask;
-
                   }
 
                   /* Enable interrupt in NVIC for FlexCAN reception with default priority (ID = 81) */
