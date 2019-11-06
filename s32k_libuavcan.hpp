@@ -757,7 +757,7 @@ public:
                   FlexCAN[i]->IMASK1 = CAN_IMASK1_BUF31TO0M(124);
 
                   /* Exit from freeze mode */
-                  FlexCAN[i]->MCR &= ~CAN_MCR_HALT_MASK;
+                  FlexCAN[i]->MCR &= ~(CAN_MCR_HALT_MASK | CAN_MCR_FRZ_MASK);
 
                   /* Block for freeze mode exit */
                   if ( isSuccess(Status) )
