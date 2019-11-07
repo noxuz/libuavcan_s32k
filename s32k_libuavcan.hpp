@@ -423,7 +423,7 @@ public:
             for(std::uint8_t i = 0; i < S32K_CANFD_Count; i++)
             {
                 /* Enter freeze mode for filter reconfiguration */
-                FlexCAN[i]->MCR |= CAN_MCR_HALT_MASK;
+                FlexCAN[i]->MCR |= (CAN_MCR_HALT_MASK | CAN_MCR_FRZ_MASK);
 
                 /* Block for freeze mode entry, halts any transmission or  */
                 if ( isSuccess(Status) )
