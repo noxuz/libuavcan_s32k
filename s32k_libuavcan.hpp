@@ -454,7 +454,7 @@ public:
                     }
 
                     /* Freeze mode exit request */
-                    FlexCAN[i]->MCR &= ~CAN_MCR_HALT_MASK;
+                    FlexCAN[i]->MCR &= ~(CAN_MCR_HALT_MASK | CAN_MCR_FRZ_MASK);
 
                     /* Block for freeze mode exit */
                     if ( isSuccess(Status) )
