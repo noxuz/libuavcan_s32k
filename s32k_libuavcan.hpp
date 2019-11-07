@@ -266,13 +266,13 @@ public:
                  * Bit Rate Switch            (BRS) = 1
                  * Error State Indicator      (ESI) = 0
                  * Message Buffer Code       (CODE) = 12 ( Transmit data frame )
-                 * Substitute Remote Request  (SRR) = 1  ( Mandatory 1 for Tx )
+                 * Substitute Remote Request  (SRR) = 0
                  * ID Extended Bit            (IDE) = 1
                  * Remote Tx Request          (RTR) = 0
                  * Data Length Code           (DLC) = frame.getdlc()
                  * Counter Time Stamp  (TIME STAMP) = 0 ( Handled by hardware )
                  */
-                FlexCAN[ interface_index-1 ]->RAMn[0*MB_Size_Words + 0] = CAN_RAMn_DATA_BYTE_1(0x60)          |
+                FlexCAN[ interface_index-1 ]->RAMn[0*MB_Size_Words + 0] = CAN_RAMn_DATA_BYTE_1(0x20)          |
                                                                           CAN_WMBn_CS_DLC(frames[0].getDLC()) |
                                                                           CAN_RAMn_DATA_BYTE_0(0xCC);
 
@@ -323,13 +323,13 @@ public:
                  * Bit Rate Switch            (BRS) = 1
                  * Error State Indicator      (ESI) = 0
                  * Message Buffer Code       (CODE) = 12 ( Transmit data frame )
-                 * Substitute Remote Request  (SRR) = 1  ( Mandatory 1 for Tx )
+                 * Substitute Remote Request  (SRR) = 0
                  * ID Extended Bit            (IDE) = 1
                  * Remote Tx Request          (RTR) = 0
                  * Data Length Code           (DLC) = frame.getdlc()
                  * Counter Time Stamp  (TIME STAMP) = 0  ( Handled by hardware )
                  */
-                FlexCAN[ interface_index-1 ]->RAMn[1*MB_Size_Words + 0] = CAN_RAMn_DATA_BYTE_1(0x60)          |
+                FlexCAN[ interface_index-1 ]->RAMn[1*MB_Size_Words + 0] = CAN_RAMn_DATA_BYTE_1(0x20)          |
                                                                           CAN_WMBn_CS_DLC(frames[0].getDLC()) |
                                                                           CAN_RAMn_DATA_BYTE_0(0xCC);
 
