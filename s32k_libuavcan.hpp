@@ -716,7 +716,10 @@ public:
                    * so they must be explicitly initialized, they total 128 slots of 4 words each, which sum 
                    * to 512 bytes, each MB is 72 byte in size ( 64 payload and 8 for headers )
                    */
-                  std::fill(FlexCAN[i]->RAMn[0],FlexCAN[i]->RAMn[CAN_RAMn_COUNT],0);
+                  for(std::uint8_t j = 0; j<CAN_RAMn_COUNT; j++)
+                  {
+                      FlexCAN[i]->RAMn[j] = 0;
+                  }
 
                   /* Setup maximum number of message buffers as 7, 0th and 1st for transmission and 2nd-7th for RX */
                   FlexCAN[i]->MCR |= CAN_MCR_MAXMB(6)    |
