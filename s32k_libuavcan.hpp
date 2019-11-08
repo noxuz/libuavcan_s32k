@@ -633,10 +633,10 @@ public:
             Status = flagPollTimeout_Set(SCG->SPLLCSR,SCG_SPLLCSR_SPLLVLD_MASK); /* Poll for valid SPLL reference */
 
             /* Normal RUN configuration for output clocks */
-            SCG->RCCR |= SCG_RCCR_SCS(6)     |  /* Select SPLL as system clock source */
-                         SCG_RCCR_DIVCORE(1) |  /* Additional dividers for Normal Run mode */
-                         SCG_RCCR_DIVBUS(1)  |
-                         SCG_RCCR_DIVSLOW(2);
+            SCG->RCCR = SCG_RCCR_SCS(6)     |  /* Select SPLL as system clock source */
+                        SCG_RCCR_DIVCORE(1) |  /* Additional dividers for Normal Run mode */
+                        SCG_RCCR_DIVBUS(1)  |
+                        SCG_RCCR_DIVSLOW(2);
 
             /* CAN frames timestamping 64-bit timer initialization using chained LPIT channel 0 and 1 */
 
