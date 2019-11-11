@@ -721,6 +721,12 @@ public:
                       FlexCAN[i]->RAMn[j] = 0;
                   }
 
+                  /* Clear the reception masks before configuring the ones needed */
+                  for(std::uint8_t j = 0; j<CAN_RXIMR_COUNT; j++)
+                  {
+                      FlexCAN[i]->RXIMR[j] = 0;
+                  }
+
                   /* Setup maximum number of message buffers as 7, 0th and 1st for transmission and 2nd-7th for RX */
                   FlexCAN[i]->MCR |= CAN_MCR_MAXMB(6)    |
                                      CAN_MCR_SRXDIS_MASK | /* Disable self-reception of frames if ID matches */
