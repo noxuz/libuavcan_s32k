@@ -599,8 +599,7 @@ public:
         PCC->PCCn[PCC_LPIT_INDEX] |= PCC_PCCn_CGC(1); /* Clock gating to LPIT module */
         
 
-        LPIT0->MCR |= LPIT_MCR_M_CEN(1) |             /* Enable LPIT for additional setup */
-                      LPIT_MCR_DBG_EN(1);             /* Allow operation in debug mode */ 
+        LPIT0->MCR |= LPIT_MCR_M_CEN(1);              /* Enable LPIT for additional setup */
 
         /* Select 32-bit peridic timer mode (default) */
         LPIT0->TMR[3].TCTRL |= LPIT_TMR_TCTRL_MODE(0);
