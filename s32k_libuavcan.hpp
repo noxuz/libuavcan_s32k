@@ -924,6 +924,8 @@ public:
 } /* END namespace media */
 } /* END namespace libuavcan */
 
+extern "C"
+{
 /* ISR for FlexCAN0 successful reception */
 void CAN0_ORed_0_15_MB_IRQHandler()
 {
@@ -948,5 +950,6 @@ void CAN0_ORed_0_15_MB_IRQHandler()
         libuavcan::media::S32K_InterfaceManager::S32K_libuavcan_ISR(2u);
     }
 #endif
+}
 
 #endif
