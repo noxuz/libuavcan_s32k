@@ -535,6 +535,10 @@ public:
 
                 if ( flag )
                 {
+                    /* Global unlock of message buffers by reading the module timer */
+                    (void)FlexCAN[i]->TIMER;
+                    
+                    /* If timeout didn't ocurred, return success code */
                     return libuavcan::Result::Success;
                 }
 
