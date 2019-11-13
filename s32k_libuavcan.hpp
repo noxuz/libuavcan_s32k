@@ -518,6 +518,9 @@ public:
                 std::uint32_t flagMB5 = (FlexCAN[i]->RAMn[5*MB_Size_Words]) & CAN_RAMn_DATA_BYTE_0(0xF);
                 std::uint32_t flagMB6 = (FlexCAN[i]->RAMn[6*MB_Size_Words]) & CAN_RAMn_DATA_BYTE_0(0xF);
 
+                /* Global unlock of message buffers by reading the module timer */
+                (void)FlexCAN[i]->TIMER;
+                    
                 /* If ignore = true, check only RX buffers (2th-6th) */
                 if( ignore_write_available )
                 {
@@ -535,9 +538,6 @@ public:
 
                 if ( flag )
                 {
-                    /* Global unlock of message buffers by reading the module timer */
-                    (void)FlexCAN[i]->TIMER;
-                    
                     /* If timeout didn't ocurred, return success code */
                     return libuavcan::Result::Success;
                 }
