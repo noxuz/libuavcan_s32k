@@ -855,72 +855,81 @@ public:
         /* Initialize variable for finding which MB received */
         std::uint8_t MB_index = 0;
 
-        /* Check which MB caused the interrupt */
-        switch( FlexCAN[instance]->IFLAG1 )
+        /* Check which RX MB caused the interrupt (0b1111100) mask for 2nd-6th MB */
+        switch( FlexCAN[instance]->IFLAG1 & 124 )
         {
         case 0x4:
             MB_index = 2;
+            break;
         case 0x8:
             MB_index = 3;
+            break;
         case 0x10:
             MB_index = 4;
+            break;
         case 0x20:
             MB_index = 5;
+            break;
         case 0x40:
             MB_index = 6;
+            break;
         }
         
-        /* Receive a frame only if the buffer its under its capacity */
-        if (g_frame_ISRbuffer[instance].get_allocator().max_size() <= S32K_Frame_Capacity)
+        if( MB_index )
         {
-            /* Parse the Message buffer, reading the control and status word locks the MB */
-         
-            /* Get the raw DLC from the message buffer that received a frame */
-            std::uint32_t dlc_ISR_raw = ((FlexCAN[instance]->RAMn[MB_index*S32K_InterfaceGroup::MB_Size_Words + 0])
-                                                              & CAN_WMBn_CS_DLC_MASK ) >> CAN_WMBn_CS_DLC_SHIFT;
-
-            /* Create CAN::FrameDLC type variable from the raw dlc */
-            CAN::FrameDLC dlc_ISR = CAN::FrameDLC(dlc_ISR_raw);
-
-            /* Convert from dlc to data length in bytes */
-            std::uint8_t payloadLength_ISR = S32K_InterfaceGroup::FrameType::dlcToLength(dlc_ISR);
-
-            /* Get the id */
-            std::uint32_t id_ISR = (FlexCAN[instance]->RAMn[MB_index*S32K_InterfaceGroup::MB_Size_Words + 1]) &
-                                                                                          CAN_WMBn_ID_ID_MASK;
-
-            /* Array for parsing from native uint32_t to uint8_t */
-            std::uint8_t data_ISR_byte[payloadLength_ISR];
-
-            /* Parse the full words of the MB in bytes */
-            for(std::uint8_t i = 0; i < payloadLength_ISR; i++)
+            /* Receive a frame only if the buffer its under its capacity */
+            if (g_frame_ISRbuffer[instance].size() <= S32K_Frame_Capacity)
             {
-                data_ISR_byte[i] = ( FlexCAN[instance]->RAMn[MB_index*S32K_InterfaceGroup::MB_Size_Words +
-                                                          S32K_InterfaceGroup::MB_Data_Offset + (i >> 2)] &
-                                             (0xFF << ((3 - (i & 0x3)) << 3 ) ) ) >> ((3 - (i & 0x3)) << 3);
-            }
+                /* Parse the Message buffer, read of the control and status word locks the MB */
+             
+                /* Get the raw DLC from the message buffer that received a frame */
+                std::uint32_t dlc_ISR_raw = ((FlexCAN[instance]->RAMn[MB_index*S32K_InterfaceGroup::MB_Size_Words + 0])
+                                                                  & CAN_WMBn_CS_DLC_MASK ) >> CAN_WMBn_CS_DLC_SHIFT;
 
-            /* Parse remaining bytes that don't complete up to a word if there are */
-            for(std::uint8_t i = 0; i < (payloadLength_ISR & 0x3); i++)
-            {
-                data_ISR_byte[ payloadLength_ISR - (payloadLength_ISR & 0x3) + i] = 
-                                               ( FlexCAN[instance]->RAMn[MB_index*S32K_InterfaceGroup::MB_Data_Offset + 
+                /* Create CAN::FrameDLC type variable from the raw dlc */
+                CAN::FrameDLC dlc_ISR = CAN::FrameDLC(dlc_ISR_raw);
+
+                /* Convert from dlc to data length in bytes */
+                std::uint8_t payloadLength_ISR = S32K_InterfaceGroup::FrameType::dlcToLength(dlc_ISR);
+
+                /* Get the id */
+                std::uint32_t id_ISR = (FlexCAN[instance]->RAMn[MB_index*S32K_InterfaceGroup::MB_Size_Words + 1]) &
+                                                                                              CAN_WMBn_ID_ID_MASK;
+
+                /* Array for parsing from native uint32_t to uint8_t */
+                std::uint8_t data_ISR_byte[payloadLength_ISR];
+
+                /* Parse the full words of the MB in bytes */
+                for(std::uint8_t i = 0; i < payloadLength_ISR; i++)
+                {
+                    data_ISR_byte[i] = ( FlexCAN[instance]->RAMn[MB_index*S32K_InterfaceGroup::MB_Size_Words +
+                                                              S32K_InterfaceGroup::MB_Data_Offset + (i >> 2)] &
+                                                 (0xFF << ((3 - (i & 0x3)) << 3 ) ) ) >> ((3 - (i & 0x3)) << 3);
+                }
+
+                /* Parse remaining bytes that don't complete up to a word if there are */
+                for(std::uint8_t i = 0; i < (payloadLength_ISR & 0x3); i++)
+                {
+                    data_ISR_byte[ payloadLength_ISR - (payloadLength_ISR & 0x3) + i] = 
+                                                ( FlexCAN[instance]->RAMn[MB_index*S32K_InterfaceGroup::MB_Data_Offset + 
                                                          S32K_InterfaceGroup::MB_Data_Offset + (payloadLength_ISR >> 2)]
                                                                              & (0xFF << ((3-i) << 3)) ) >> ((3-i) << 3);
+                }
+
+                /* Create Frame object with constructor */
+                CAN::Frame< CAN::TypeFD::MaxFrameSizeBytes> FrameISR(id_ISR,data_ISR_byte,dlc_ISR,timestamp_ISR);
+
+                /* Insert the frame into the queue */
+                g_frame_ISRbuffer[instance].push_back(FrameISR);
             }
 
-            /* Create Frame object with constructor */
-            CAN::Frame< CAN::TypeFD::MaxFrameSizeBytes> FrameISR(id_ISR,data_ISR_byte,dlc_ISR,timestamp_ISR);
+            /* Unlock the MB by reading the timer register */
+            (void)FlexCAN[instance]->TIMER;
 
-            /* Insert the frame into the queue */
-            g_frame_ISRbuffer[instance].push_back(FrameISR);
+            /* Clear MB interrupt flag (write 1 to clear)*/
+            FlexCAN[instance]->IFLAG1 |= (1<<MB_index);
+            
         }
-
-        /* Unlock the MB by reading the timer register */
-        (void)FlexCAN[instance]->TIMER;
-
-        /* Clear MB interrupt flag (write 1 to clear)*/
-        FlexCAN[instance]->IFLAG1 |= (1<<MB_index);
     }
     
 };
