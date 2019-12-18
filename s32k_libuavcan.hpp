@@ -26,7 +26,6 @@
  * FLASH_CLK: 26.67Mhz
  *
  * Dividers:
- * SIRCDIV2 = 8
  * SOSCDIV2 = 8
  *
  * LPIT source = SOSCDIV2 (1Mhz)
@@ -36,8 +35,8 @@
  */
 
 /* Include desired target S32K14x registers and features header files,
- * defaults to S32K144 from NXP's UAVCAN node board */
-#include "S32K144.h"
+ * defaults to S32K146 from NXP's UAVCAN node board */
+#include "S32K146.h"
 
 /* libuavcan core header files */
 #include "libuavcan/media/can.hpp"
@@ -593,199 +592,163 @@ public:
           Status = libuavcan::Result::BadArgument;
       }
 
-      if( isSuccess(Status) )
+      /* SysClock initialization for feeding 80Mhz to FlexCAN */
+        
+      /* System Oscillator (SOSC) initialization for 8Mhz external crystal */
+      SCG->SOSCCSR &= ~SCG_SOSCCSR_LK_MASK;     /* Ensure the register is unlocked */
+      SCG->SOSCCSR &= ~SCG_SOSCCSR_SOSCEN_MASK; /* Disable SOSC for setup */
+      SCG->SOSCCFG  =  SCG_SOSCCFG_EREFS_MASK | /* Setup external crystal for SOSC reference */
+                       SCG_SOSCCFG_RANGE(2);    /* Select 8Mhz range */
+      SCG->SOSCDIV |=  SCG_SOSCDIV_SOSCDIV2(4); /* Divider of 8 for LPIT clock source, gets 1Mhz reference */
+      SCG->SOSCCSR  =  SCG_SOSCCSR_SOSCEN_MASK; /* Enable SOSC reference */
+      SCG->SOSCCSR |=  SCG_SOSCCSR_LK_MASK;     /* Lock the register from accidental writes */
+
+      /* Poll for valid SOSC reference, needs 4096 cycles */
+      while(!(SCG->SOSCCSR & SCG_SOSCCSR_SOSCVLD_MASK)){};
+
+      /* System PLL (SPLL) initialization for to 160Mhz reference */
+      SCG->SPLLCSR &= ~SCG_SPLLCSR_LK_MASK;     /* Ensure the register is unlocked */
+      SCG->SPLLCSR &= ~SCG_SPLLCSR_SPLLEN_MASK; /* Disable PLL for setup */
+      SCG->SPLLCFG  =  SCG_SPLLCFG_MULT(24);    /* Select multiply factor of 40 for 160Mhz SPLL_CLK */
+      SCG->SPLLCSR |=  SCG_SPLLCSR_SPLLEN_MASK; /* Enable PLL */
+      SCG->SPLLCSR |=  SCG_SPLLCSR_LK_MASK;     /* Lock register from accidental writes */
+
+      while(!(SCG->SPLLCSR & SCG_SPLLCSR_SPLLVLD_MASK)){}; /* Poll for valid SPLL reference */
+
+      /* Normal RUN configuration for output clocks */
+      SCG->RCCR = SCG_RCCR_SCS(6)     |  /* Select SPLL as system clock source */
+                  SCG_RCCR_DIVCORE(1) |  /* Additional dividers for Normal Run mode */
+                  SCG_RCCR_DIVBUS(1)  |
+                  SCG_RCCR_DIVSLOW(2);
+
+      /* CAN frames timestamping 64-bit timer initialization using chained LPIT channel 0 and 1 */
+
+      /* Clock source option 1: (SOSCDIV2) at 1Mhz clearing previous bit configuration */
+      PCC->PCCn[PCC_LPIT_INDEX] |=  PCC_PCCn_PCS(1);
+      PCC->PCCn[PCC_LPIT_INDEX] |=  PCC_PCCn_CGC(1); /* Clock gating to LPIT module */
+
+      /* Enable module */
+      LPIT0->MCR |= LPIT_MCR_M_CEN(1);
+
+      /* Select 32-bit periodic Timer for both chained channels and timeouts timer (default)  */
+      LPIT0->TMR[0].TCTRL |= LPIT_TMR_TCTRL_MODE(0);
+      LPIT0->TMR[1].TCTRL |= LPIT_TMR_TCTRL_MODE(0);
+      LPIT0->TMR[3].TCTRL |= LPIT_TMR_TCTRL_MODE(0);
+
+      /* Select chain mode for channel 1, this becomes the most significant 32 bits */
+      LPIT0->TMR[1].TCTRL |= LPIT_TMR_TCTRL_CHAIN(1);
+
+      /* Setup max reload value for both channels 0xFFFFFFFF */
+      LPIT0->TMR[0].TVAL = LPIT_TMR_TVAL_TMR_VAL_MASK;
+      LPIT0->TMR[1].TVAL = LPIT_TMR_TVAL_TMR_VAL_MASK;
+
+      /* Start the timers */
+      LPIT0->SETTEN |= LPIT_SETTEN_SET_T_EN_0(1) |
+                       LPIT_SETTEN_SET_T_EN_1(1);
+
+      /* Verify that the least significant 32-bit timer is counting (not locked at 0) */
+      while(!(LPIT0->TMR[0].CVAL & LPIT_TMR_CVAL_TMR_CUR_VAL_MASK)){};
+
+      /* FlexCAN instances initialization */
+      for(std::uint8_t i = 0; i < S32K_CANFD_Count ; i++)
       {
-        /* LPIT0 channel initialization for timeout timer */
-        SCG->SIRCCSR &= ~SCG_SIRCCSR_SIRCEN(1);       /* Disable SIRC for configuration */
-        SCG->SIRCDIV |= SCG_SIRCDIV_SIRCDIV2(4);      /* Divide by 8 to get 1Mhz */
-        SCG->SIRCCSR |= SCG_SIRCCSR_SIRCEN(1);        /* Enable SIRC back */
-        PCC->PCCn[PCC_LPIT_INDEX] |= PCC_PCCn_PCS(2); /* Select SIRCDIV2_CLK as LPIT source */
-        PCC->PCCn[PCC_LPIT_INDEX] |= PCC_PCCn_CGC(1); /* Clock gating to LPIT module */
-        
+          PCC->PCCn[ PCC_FlexCAN_Index[i] ] = PCC_PCCn_CGC_MASK; /* FlexCAN0 clock gating */
+          FlexCAN[i]->MCR   |=  CAN_MCR_MDIS_MASK;     /* Disable FlexCAN0 module for clock source selection */
+          FlexCAN[i]->CTRL1 |=  CAN_CTRL1_CLKSRC_MASK; /* Select SYS_CLK as source (80Mhz)*/
+          FlexCAN[i]->MCR   &= ~CAN_MCR_MDIS_MASK;     /* Enable FlexCAN and automatic transition to freeze mode*/
 
-        LPIT0->MCR |= LPIT_MCR_M_CEN(1);              /* Enable LPIT for additional setup */
+          /* Block for freeze mode entry */
+          while(!(FlexCAN[i]->MCR & CAN_MCR_FRZACK_MASK)){};
 
-        /* Select 32-bit peridic timer mode (default) */
-        LPIT0->TMR[3].TCTRL |= LPIT_TMR_TCTRL_MODE(0);
+          /* Next configurations are only permitted in freeze mode */
+          FlexCAN[i]->MCR |= CAN_MCR_FDEN_MASK  |      /* Habilitate CANFD feature */
+                             CAN_MCR_FRZ_MASK;         /* Enable freeze mode entry when HALT bit is asserted */
+          FlexCAN[i]->CTRL2 |= CAN_CTRL2_ISOCANFDEN_MASK;  /* Activate the use of ISO 11898-1 CAN-FD standard */
 
-        /* SysClock initialization for feeding 80Mhz to FlexCAN */
-        
-        /* System Oscillator (SOSC) initialization for 8Mhz external crystal */
-        SCG->SOSCCSR &= ~SCG_SOSCCSR_LK_MASK;     /* Ensure the register is unlocked */
-        SCG->SOSCCSR &= ~SCG_SOSCCSR_SOSCEN_MASK; /* Disable SOSC for setup */
-        SCG->SOSCCFG  =  SCG_SOSCCFG_EREFS_MASK | /* Setup external crystal for SOSC reference */
-                         SCG_SOSCCFG_RANGE(2);    /* Select 8Mhz range */
-        SCG->SOSCDIV |=  SCG_SOSCDIV_SOSCDIV2(4); /* Divider of 8 for LPIT clock source, gets 1Mhz reference */
-        SCG->SOSCCSR  =  SCG_SOSCCSR_SOSCEN_MASK; /* Enable SOSC reference */
-        SCG->SOSCCSR |=  SCG_SOSCCSR_LK_MASK;     /* Lock the register from accidental writes */
-
-        if ( isSuccess(Status) )
-        {
-          /* Poll for valid SOSC reference, needs 4096 cycles*/
-          Status = flagPollTimeout_Set(SCG->SOSCCSR,SCG_SOSCCSR_SOSCVLD_MASK);
-
-          /* System PLL (SPLL) initialization for to 160Mhz reference */
-          SCG->SPLLCSR &= ~SCG_SPLLCSR_LK_MASK;     /* Ensure the register is unlocked */
-          SCG->SPLLCSR &= ~SCG_SPLLCSR_SPLLEN_MASK; /* Disable PLL for setup */
-          SCG->SPLLCFG  =  SCG_SPLLCFG_MULT(24);    /* Select multiply factor of 40 for 160Mhz SPLL_CLK */
-          SCG->SPLLCSR |=  SCG_SPLLCSR_SPLLEN_MASK; /* Enable PLL */
-          SCG->SPLLCSR |=  SCG_SPLLCSR_LK_MASK;     /* Lock register from accidental writes */
-
-          if ( isSuccess(Status) )
-          {
-            Status = flagPollTimeout_Set(SCG->SPLLCSR,SCG_SPLLCSR_SPLLVLD_MASK); /* Poll for valid SPLL reference */
-
-            /* Normal RUN configuration for output clocks */
-            SCG->RCCR = SCG_RCCR_SCS(6)     |  /* Select SPLL as system clock source */
-                        SCG_RCCR_DIVCORE(1) |  /* Additional dividers for Normal Run mode */
-                        SCG_RCCR_DIVBUS(1)  |
-                        SCG_RCCR_DIVSLOW(2);
-
-            /* CAN frames timestamping 64-bit timer initialization using chained LPIT channel 0 and 1 */
-
-            /* Disable module for setup */
-            LPIT0->MCR &= ~LPIT_MCR_M_CEN_MASK;
-
-            /* Clock source option 1: (SOSCDIV2) at 1Mhz clearing previous bit configuration */
-            PCC->PCCn[PCC_LPIT_INDEX] = ( PCC->PCCn[PCC_LPIT_INDEX] & ~PCC_PCCn_PCS_MASK ) | PCC_PCCn_PCS(1);
-
-            /* Enable module */
-            LPIT0->MCR |= LPIT_MCR_M_CEN(1);
-
-            /* Select 32-bit periodic Timer for both chained channels (default)  */
-            LPIT0->TMR[0].TCTRL |= LPIT_TMR_TCTRL_MODE(0);
-            LPIT0->TMR[1].TCTRL |= LPIT_TMR_TCTRL_MODE(0);
-
-            /* Select chain mode for channel 1, this becomes the most significant 32 bits */
-            LPIT0->TMR[1].TCTRL |= LPIT_TMR_TCTRL_CHAIN(1);
-
-            /* Setup max reload value for both channels 0xFFFFFFFF */
-            LPIT0->TMR[0].TVAL = LPIT_TMR_TVAL_TMR_VAL_MASK;
-            LPIT0->TMR[1].TVAL = LPIT_TMR_TVAL_TMR_VAL_MASK;
-
-            /* Start the timers */
-            LPIT0->SETTEN |= LPIT_SETTEN_SET_T_EN_0(1) |
-                             LPIT_SETTEN_SET_T_EN_1(1);
-
-            /* Verify that the least significant 32-bit timer is counting (not locked at 0) */
-            if ( isSuccess(Status) )
-            {
-              Status = flagPollTimeout_Set(LPIT0->TMR[0].CVAL,LPIT_TMR_CVAL_TMR_CUR_VAL_MASK);
-
-              /* FlexCAN instances initialization */
-              for(std::uint8_t i = 0; i < S32K_CANFD_Count ; i++)
-              {
-                PCC->PCCn[ PCC_FlexCAN_Index[i] ] = PCC_PCCn_CGC_MASK; /* FlexCAN0 clock gating */
-                FlexCAN[i]->MCR   |=  CAN_MCR_MDIS_MASK;     /* Disable FlexCAN0 module for clock source selection */
-                FlexCAN[i]->CTRL1 |=  CAN_CTRL1_CLKSRC_MASK; /* Select SYS_CLK as source (80Mhz)*/
-                FlexCAN[i]->MCR   &= ~CAN_MCR_MDIS_MASK;     /* Enable FlexCAN and automatic transition to freeze mode*/
-
-                /* Block for freeze mode entry */
-                if ( isSuccess(Status) )
-                {
-                  Status = flagPollTimeout_Set(FlexCAN[i]->MCR,CAN_MCR_FRZACK_MASK);
-
-                  /* Next configurations are only permitted in freeze mode */
-                  FlexCAN[i]->MCR |= CAN_MCR_FDEN_MASK  |      /* Habilitate CANFD feature */
-                                     CAN_MCR_FRZ_MASK;         /* Enable freeze mode entry when HALT bit is asserted */
-                  FlexCAN[i]->CTRL2 |= CAN_CTRL2_ISOCANFDEN_MASK;  /* Activate the use of ISO 11898-1 CAN-FD standard */
-
-                  /* CAN Bit Timing (CBT) configuration for a nominal phase of 1 Mbit/s with 80 time quantas,
-                     in accordance with Bosch 2012 specification, sample point at 83.75% */
-                  FlexCAN[i]->CBT |= CAN_CBT_BTF_MASK     |  /* Enable extended bit timing configurations for CAN-FD
+          /* CAN Bit Timing (CBT) configuration for a nominal phase of 1 Mbit/s with 80 time quantas,
+             in accordance with Bosch 2012 specification, sample point at 83.75% */
+          FlexCAN[i]->CBT |= CAN_CBT_BTF_MASK     |  /* Enable extended bit timing configurations for CAN-FD
                                                                 for setting up separetely nominal and data phase */
-                                     CAN_CBT_EPRESDIV(0)  |  /* Prescaler divisor factor of 1 */
-                                     CAN_CBT_EPROPSEG(46) |  /* Propagation segment of 47 time quantas */
-                                     CAN_CBT_EPSEG1(18)   |  /* Phase buffer segment 1 of 19 time quantas */
-                                     CAN_CBT_EPSEG2(12)   |  /* Phase buffer segment 2 of 13 time quantas */
-                                     CAN_CBT_ERJW(12);       /* Resynchronization jump width same as PSEG2 */
+                             CAN_CBT_EPRESDIV(0)  |  /* Prescaler divisor factor of 1 */
+                             CAN_CBT_EPROPSEG(46) |  /* Propagation segment of 47 time quantas */
+                             CAN_CBT_EPSEG1(18)   |  /* Phase buffer segment 1 of 19 time quantas */
+                             CAN_CBT_EPSEG2(12)   |  /* Phase buffer segment 2 of 13 time quantas */
+                             CAN_CBT_ERJW(12);       /* Resynchronization jump width same as PSEG2 */
 
-                  /* CAN-FD Bit Timing (FDCBT) for a data phase of 4 Mbit/s with 20 time quantas,
-                     in accordance with Bosch 2012 specification, sample point at 75% */
-                  FlexCAN[i]->FDCBT |= CAN_FDCBT_FPRESDIV(0) |  /* Prescaler divisor factor of 1 */
-                                       CAN_FDCBT_FPROPSEG(7) |  /* Propagation semgment of 7 time quantas 
-                                                                   (only register that doesn't add 1) */
-                                       CAN_FDCBT_FPSEG1(6)   |  /* Phase buffer segment 1 of 7 time quantas */
-                                       CAN_FDCBT_FPSEG2(4)   |  /* Phase buffer segment 2 of 5 time quantas */
-                                       CAN_FDCBT_FRJW(4);       /* Resynchorinzation jump width same as PSEG2 */
+          /* CAN-FD Bit Timing (FDCBT) for a data phase of 4 Mbit/s with 20 time quantas,
+             in accordance with Bosch 2012 specification, sample point at 75% */
+          FlexCAN[i]->FDCBT |= CAN_FDCBT_FPRESDIV(0) |  /* Prescaler divisor factor of 1 */
+                               CAN_FDCBT_FPROPSEG(7) |  /* Propagation semgment of 7 time quantas
+                                                           (only register that doesn't add 1) */
+                               CAN_FDCBT_FPSEG1(6)   |  /* Phase buffer segment 1 of 7 time quantas */
+                               CAN_FDCBT_FPSEG2(4)   |  /* Phase buffer segment 2 of 5 time quantas */
+                               CAN_FDCBT_FRJW(4);       /* Resynchorinzation jump width same as PSEG2 */
 
-                  /* Additional CAN-FD configurations */
-                  FlexCAN[i]->FDCTRL |= CAN_FDCTRL_FDRATE_MASK | /* Enable bit rate switch in data phase of frame */
-                                        CAN_FDCTRL_TDCEN_MASK  | /* Enable transceiver delay compensation */
-                                        CAN_FDCTRL_TDCOFF(5)   | /* Setup 5 cycles for data phase sampling delay */
-                                        CAN_FDCTRL_MBDSR0(3);    /* Setup 64 bytes per message buffer (7 MB's) */
+          /* Additional CAN-FD configurations */
+          FlexCAN[i]->FDCTRL |= CAN_FDCTRL_FDRATE_MASK | /* Enable bit rate switch in data phase of frame */
+                                CAN_FDCTRL_TDCEN_MASK  | /* Enable transceiver delay compensation */
+                                CAN_FDCTRL_TDCOFF(5)   | /* Setup 5 cycles for data phase sampling delay */
+                                CAN_FDCTRL_MBDSR0(3);    /* Setup 64 bytes per message buffer (7 MB's) */
 
-                  /* Message buffers are located in a dedicated RAM inside FlexCAN, they aren't affected by reset,
-                   * so they must be explicitly initialized, they total 128 slots of 4 words each, which sum 
-                   * to 512 bytes, each MB is 72 byte in size ( 64 payload and 8 for headers )
-                   */
-                  for(std::uint8_t j = 0; j<CAN_RAMn_COUNT; j++)
-                  {
-                      FlexCAN[i]->RAMn[j] = 0;
-                  }
-
-                  /* Clear the reception masks before configuring the ones needed */
-                  for(std::uint8_t j = 0; j<CAN_RXIMR_COUNT; j++)
-                  {
-                      FlexCAN[i]->RXIMR[j] = 0;
-                  }
-
-                  /* Setup maximum number of message buffers as 7, 0th and 1st for transmission and 2nd-6th for RX */
-                  FlexCAN[i]->MCR &= ~CAN_MCR_MAXMB_MASK;  /* Clear previous configuracion of MAXMB, default is 0xF */
-                  FlexCAN[i]->MCR |= CAN_MCR_MAXMB(6)    |
-                                     CAN_MCR_SRXDIS_MASK | /* Disable self-reception of frames if ID matches */
-                                     CAN_MCR_IRMQ_MASK;    /* Enable individual message buffer masking */
-
-                  /* Setup Message buffers 2nd-6th for reception and set filters */
-                  for(std::uint8_t j = 0; j < filter_config_length; j++ )
-                  {
-                    /* Setup reception MB's mask from input argument */
-                    FlexCAN[i]->RXIMR[j+2] = filter_config[j].mask;
-
-                    /* Setup word 0 (4 Bytes) for ith MB
-                     * Extended Data Length      (EDL) = 1
-                     * Bit Rate Switch           (BRS) = 1
-                     * Error State Indicator     (ESI) = 0
-                     * Message Buffer Code      (CODE) = 4 ( Active for reception and empty )
-                     * Substitute Remote Request (SRR) = 0
-                     * ID Extended Bit           (IDE) = 1
-                     * Remote Tx Request         (RTR) = 0
-                     * Data Length Code          (DLC) = 0 ( Valid for transmission only )
-                     * Counter Time Stamp (TIME STAMP) = 0 ( Handled by hardware )
-                     */
-                    FlexCAN[i]->RAMn[(j+2)*S32K_InterfaceGroup::MB_Size_Words] = CAN_RAMn_DATA_BYTE_0(0xC4) |
-                                                                                 CAN_RAMn_DATA_BYTE_1(0x20);
-
-                    /* Setup Message buffers 2-7 29-bit extended ID from parameter */
-                    FlexCAN[i]->RAMn[(j+2)*S32K_InterfaceGroup::MB_Size_Words + 1] = filter_config[j].id;
-                  }
-
-                  /* Enable interrupt in NVIC for FlexCAN reception with default priority (ID = 81) */
-                  S32_NVIC->ISER[ S32K_FlexCAN_NVIC_Indices[i][0] ] = S32K_FlexCAN_NVIC_Indices[i][1];
-                                                                   
-                  /* Enable interrupts of reception MB's (0b1111100) */
-                  FlexCAN[i]->IMASK1 = CAN_IMASK1_BUF31TO0M(124);
-
-                  /* Exit from freeze mode */
-                  FlexCAN[i]->MCR &= ~(CAN_MCR_HALT_MASK | CAN_MCR_FRZ_MASK);
-
-                  /* Block for freeze mode exit */
-                  if ( isSuccess(Status) )
-                  {
-                    Status = flagPollTimeout_Clear(FlexCAN[i]->MCR,CAN_MCR_FRZACK_MASK);
-
-                    /* Block until module is ready */
-                    if ( isSuccess(Status) )
-                    {
-                      Status = flagPollTimeout_Clear(FlexCAN[i]->MCR,CAN_MCR_NOTRDY_MASK);
-                    }
-
-                  }
-                }
-              }
-            }
+          /* Message buffers are located in a dedicated RAM inside FlexCAN, they aren't affected by reset,
+           * so they must be explicitly initialized, they total 128 slots of 4 words each, which sum
+           * to 512 bytes, each MB is 72 byte in size ( 64 payload and 8 for headers )
+           */
+          for(std::uint8_t j = 0; j<CAN_RAMn_COUNT; j++)
+          {
+              FlexCAN[i]->RAMn[j] = 0;
           }
-        }
+
+          /* Clear the reception masks before configuring the ones needed */
+          for(std::uint8_t j = 0; j<CAN_RXIMR_COUNT; j++)
+          {
+              FlexCAN[i]->RXIMR[j] = 0;
+          }
+
+          /* Setup maximum number of message buffers as 7, 0th and 1st for transmission and 2nd-6th for RX */
+          FlexCAN[i]->MCR &= ~CAN_MCR_MAXMB_MASK;  /* Clear previous configuracion of MAXMB, default is 0xF */
+          FlexCAN[i]->MCR |= CAN_MCR_MAXMB(6)    |
+                             CAN_MCR_SRXDIS_MASK | /* Disable self-reception of frames if ID matches */
+                             CAN_MCR_IRMQ_MASK;    /* Enable individual message buffer masking */
+
+          /* Setup Message buffers 2nd-6th for reception and set filters */
+          for(std::uint8_t j = 0; j < filter_config_length; j++ )
+          {
+              /* Setup reception MB's mask from input argument */
+              FlexCAN[i]->RXIMR[j+2] = filter_config[j].mask;
+
+              /* Setup word 0 (4 Bytes) for ith MB
+               * Extended Data Length      (EDL) = 1
+               * Bit Rate Switch           (BRS) = 1
+               * Error State Indicator     (ESI) = 0
+               * Message Buffer Code      (CODE) = 4 ( Active for reception and empty )
+               * Substitute Remote Request (SRR) = 0
+               * ID Extended Bit           (IDE) = 1
+               * Remote Tx Request         (RTR) = 0
+               * Data Length Code          (DLC) = 0 ( Valid for transmission only )
+               * Counter Time Stamp (TIME STAMP) = 0 ( Handled by hardware )
+               */
+              FlexCAN[i]->RAMn[(j+2)*S32K_InterfaceGroup::MB_Size_Words] = CAN_RAMn_DATA_BYTE_0(0xC4) |
+                                                                           CAN_RAMn_DATA_BYTE_1(0x20);
+
+              /* Setup Message buffers 2-7 29-bit extended ID from parameter */
+              FlexCAN[i]->RAMn[(j+2)*S32K_InterfaceGroup::MB_Size_Words + 1] = filter_config[j].id;
+          }
+
+          /* Enable interrupt in NVIC for FlexCAN reception with default priority (ID = 81) */
+          S32_NVIC->ISER[ S32K_FlexCAN_NVIC_Indices[i][0] ] = S32K_FlexCAN_NVIC_Indices[i][1];
+                                                                   
+          /* Enable interrupts of reception MB's (0b1111100) */
+          FlexCAN[i]->IMASK1 = CAN_IMASK1_BUF31TO0M(124);
+
+          /* Exit from freeze mode */
+          FlexCAN[i]->MCR &= ~(CAN_MCR_HALT_MASK | CAN_MCR_FRZ_MASK);
+
+          /* Block for freeze mode exit */
+          while(FlexCAN[i]->MCR & CAN_MCR_FRZACK_MASK){};
+
+          while(FlexCAN[i]->MCR & CAN_MCR_NOTRDY_MASK){};
+
       }
 
       /* If function ended successfully, return address of object member of type S32K_InterfaceGroup */
@@ -881,7 +844,7 @@ public:
             if (g_frame_ISRbuffer[instance].size() <= S32K_Frame_Capacity)
             {
                 /* Parse the Message buffer, read of the control and status word locks the MB */
-             
+
                 /* Get the raw DLC from the message buffer that received a frame */
                 std::uint32_t dlc_ISR_raw = ((FlexCAN[instance]->RAMn[MB_index*S32K_InterfaceGroup::MB_Size_Words + 0])
                                                                   & CAN_WMBn_CS_DLC_MASK ) >> CAN_WMBn_CS_DLC_SHIFT;
@@ -910,8 +873,8 @@ public:
                 /* Parse remaining bytes that don't complete up to a word if there are */
                 for(std::uint8_t i = 0; i < (payloadLength_ISR & 0x3); i++)
                 {
-                    data_ISR_byte[ payloadLength_ISR - (payloadLength_ISR & 0x3) + i] = 
-                                                ( FlexCAN[instance]->RAMn[MB_index*S32K_InterfaceGroup::MB_Data_Offset + 
+                    data_ISR_byte[ payloadLength_ISR - (payloadLength_ISR & 0x3) + i] =
+                                                ( FlexCAN[instance]->RAMn[MB_index*S32K_InterfaceGroup::MB_Data_Offset +
                                                          S32K_InterfaceGroup::MB_Data_Offset + (payloadLength_ISR >> 2)]
                                                                              & (0xFF << ((3-i) << 3)) ) >> ((3-i) << 3);
                 }
@@ -928,7 +891,7 @@ public:
 
             /* Clear MB interrupt flag (write 1 to clear)*/
             FlexCAN[instance]->IFLAG1 |= (1<<MB_index);
-            
+
         }
     }
     

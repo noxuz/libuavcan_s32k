@@ -1,0 +1,70 @@
+/* Include media layer driver for NXP S32K MCU */
+#include "s32k_libuavcan.hpp"
+
+/* Choose for which board of the demo to target, NODE_A or NODE_B */
+#define NODE_A
+
+#if defined(NODE_A)
+/* ID for the current UAVCAN node */
+constexpr std::uint32_t Node_ID = 0xC0C0A;
+/* ID of the frame to transmit */
+constexpr std::uint32_t demo_FrameID = 0xC0FFE;
+
+#elif defined(NODE_B)
+/* ID and for the current UAVCAN node */
+constexpr std::uint32_t Node_ID = 0xC0FFE;
+/* ID of the frame to transmit */
+constexpr std::uint32_t demo_FrameID = 0xC0C0A;
+
+#endif
+
+constexpr std::uint32_t Node_Mask = 0xFFFFF;   /* All care bits mask for frame filtering */
+constexpr std::size_t Node_Filters_Count = 1u; /* Number of ID's that the node will filter in */
+constexpr std::size_t Node_Frame_Count = 1u;   /* Frames transmitted each time */
+constexpr std::size_t First_Instance = 1u;     /* Interface instance used in this demo */
+
+/* Size of the payload in bytes of the frame to be transmitted */
+constexpr std::uint16_t payload_length = libuavcan::media::S32K_InterfaceGroup::FrameType::MTUBytes;
+/* Frame's Data Length Code in function of it's payload length in bytes */
+libuavcan::media::CAN::FrameDLC demo_DLC = libuavcan::media::S32K_InterfaceGroup::FrameType::lengthToDlc(payload_length);
+
+/* 64-byte payload that will be exchanged between the nodes */
+std::uint8_t demo_payload[payload_length];
+
+std::uint32_t RxCODE; 
+std::uint32_t RxID;
+std::uint32_t RxLENGTH;
+std::uint32_t RxDATA[2];
+std::uint32_t RxTIMESTAMP;
+
+int main()
+{
+    std::fill(demo_payload,demo_payload+payload_length,0);
+    demo_payload[0] = 0x33;
+    demo_payload[1] = 0x22;
+    demo_payload[2] = 0x11;
+    demo_payload[3] = 0xA5;
+    demo_payload[4] = 0x77;
+    demo_payload[5] = 0x66;
+    demo_payload[6] = 0x55;
+    demo_payload[7] = 0x44;
+    
+    /* Instantiate factory object */
+    libuavcan::media::S32K_InterfaceManager demo_Manager;
+
+    /* Create pointer to Interface object */
+    libuavcan::media::S32K_InterfaceGroup* demo_InterfacePtr;
+
+    /* Create a frame that will reach NODE_B ID */
+    libuavcan::media::S32K_InterfaceGroup::FrameType bouncing_frame_obj(demo_FrameID,demo_payload,demo_DLC);
+
+    /* Array of frames to transmit (current implementation supports 1) */
+    libuavcan::media::S32K_InterfaceGroup::FrameType bouncing_frame[Node_Frame_Count] = {bouncing_frame_obj};
+
+    /* Instantiate the filter object that the current node will apply to receiving frames */
+    libuavcan::media::S32K_InterfaceGroup::FrameType::Filter demo_Filter(Node_ID,Node_Mask);
+
+    /* Initialize the node with the previously defined filtering using factory method */
+    libuavcan::Result Status = demo_Manager.startInterfaceGroup(&demo_Filter,Node_Filters_Count,demo_InterfacePtr);
+    
+}
