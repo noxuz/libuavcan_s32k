@@ -36,7 +36,7 @@
 
 /* Include desired target S32K14x registers and features header files,
  * defaults to S32K146 from NXP's UAVCAN node board */
-#include "S32K146.h"
+#include "S32K142.h"
 
 /* libuavcan core header files */
 #include "libuavcan/media/can.hpp"
@@ -280,7 +280,7 @@ public:
             /* Transmit through MB1 if MB0 was busy */
             else if (((0x8 == CODE_MB1) || !CODE_MB1) && !flag)
             {
-                /* Ensure interurpt flag for MB1 is cleared (write to clear register) */
+                /* Ensure interrupt flag for MB1 is cleared (write to clear register) */
                 FlexCAN[interface_index - 1]->IFLAG1 |= CAN_IFLAG1_BUF4TO1I(1);
 
                 /* Get data length of the frame wished to be written */
@@ -321,7 +321,7 @@ public:
                 FlexCAN[interface_index - 1]->RAMn[1 * MB_Size_Words + 0] =
                     CAN_RAMn_DATA_BYTE_1(0x20) | CAN_WMBn_CS_DLC(frames[0].getDLC()) | CAN_RAMn_DATA_BYTE_0(0xCC);
 
-                /* Set the return status as successfull */
+                /* Set the return status as successful */
                 Status = libuavcan::Result::Success;
 
                 /* Argument assignment to 1 Frame transmitted successfully */
@@ -743,6 +743,24 @@ public:
             {
             };
         }
+
+        /* Port initialization */
+        PCC->PCCn[ PCC_PORTE_INDEX ] |= PCC_PCCn_CGC_MASK; /* Clock gating to PORT E */
+        PORTE->PCR[4] |= PORT_PCR_MUX(5);                  /* CAN0_RX at PORT E pin 4 */
+        PORTE->PCR[5] |= PORT_PCR_MUX(5);                  /* CAN0_TX at PORT E pin 5 */
+
+        #if defined( MCU_S32K146 ) || defined( MCU_S32K148 )
+        PCC->PCCn[ PCC_PORTA_INDEX ] |= PCC_PCCn_CGC_MASK; /* Clock gating to PORT A */
+        PORTA->PCR[12] |= PORT_PCR_MUX(3);                 /* CAN1_RX at PORT A pin 12 */
+        PORTA->PCR[13] |= PORT_PCR_MUX(3);                 /* CAN1_TX at PORT A pin 13 */
+
+        #else if defined( MCU_S32K148 )
+        PCC->PCCn[ PCC_PORTB_INDEX ] |= PCC_PCCn_CGC_MASK; /* Clock gating to PORT B */
+        PORTB->PCR[12] |= PORT_PCR_MUX(4);                 /* CAN2_RX at PORT B pin 12 */
+        PORTB->PCR[13] |= PORT_PCR_MUX(4);                 /* CAN2_TX at PORT B pin 13 */
+
+
+        #endif
 
         /* If function ended successfully, return address of object member of type S32K_InterfaceGroup */
         out_group = &S32K_InterfaceGroupObj;
