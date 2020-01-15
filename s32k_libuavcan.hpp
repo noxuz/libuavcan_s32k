@@ -32,6 +32,18 @@
  * FlexCAN source = SYS_CLK (80Mhz)
  *
  * Asynchronous dividers not mentioned are left unset and SCG registers are locked
+ *
+ * Pin configuration: (Compatible with S32K14x EVB'S)
+ * CAN0 RX: PTE4
+ * CAN0 TX: PTE5
+ * CAN1 RX: PTA12
+ * CAN1 TX: PTA13
+ * CAN2 RX: PTB12
+ * CAN2 TX: PTB13
+ *
+ * S32K146 and S32K148 although having multiple CANFD instances
+ * their evb's have only one transceiver, the other instances's
+ * digital signals are set out to pin headers.
  */
 
 /* Include desired target S32K14x registers and features header files,
