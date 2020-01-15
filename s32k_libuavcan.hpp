@@ -36,7 +36,7 @@
 
 /* Include desired target S32K14x registers and features header files,
  * defaults to S32K146 from NXP's UAVCAN node board */
-#include "S32K142.h"
+#include "S32K146.h"
 
 /* libuavcan core header files */
 #include "libuavcan/media/can.hpp"
