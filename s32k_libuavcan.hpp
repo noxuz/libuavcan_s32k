@@ -745,21 +745,21 @@ public:
         }
 
         /* Port initialization */
-        PCC->PCCn[ PCC_PORTE_INDEX ] |= PCC_PCCn_CGC_MASK; /* Clock gating to PORT E */
-        PORTE->PCR[4] |= PORT_PCR_MUX(5);                  /* CAN0_RX at PORT E pin 4 */
-        PORTE->PCR[5] |= PORT_PCR_MUX(5);                  /* CAN0_TX at PORT E pin 5 */
+        PCC->PCCn[PCC_PORTE_INDEX] |= PCC_PCCn_CGC_MASK; /* Clock gating to PORT E */
+        PORTE->PCR[4] |= PORT_PCR_MUX(5);                /* CAN0_RX at PORT E pin 4 */
+        PORTE->PCR[5] |= PORT_PCR_MUX(5);                /* CAN0_TX at PORT E pin 5 */
 
-        #if defined( MCU_S32K146 ) || defined( MCU_S32K148 )
-        PCC->PCCn[ PCC_PORTA_INDEX ] |= PCC_PCCn_CGC_MASK; /* Clock gating to PORT A */
-        PORTA->PCR[12] |= PORT_PCR_MUX(3);                 /* CAN1_RX at PORT A pin 12 */
-        PORTA->PCR[13] |= PORT_PCR_MUX(3);                 /* CAN1_TX at PORT A pin 13 */
-        #endif
-        
-        #if defined( MCU_S32K148 )
-        PCC->PCCn[ PCC_PORTB_INDEX ] |= PCC_PCCn_CGC_MASK; /* Clock gating to PORT B */
-        PORTB->PCR[12] |= PORT_PCR_MUX(4);                 /* CAN2_RX at PORT B pin 12 */
-        PORTB->PCR[13] |= PORT_PCR_MUX(4);                 /* CAN2_TX at PORT B pin 13 */
-        #endif
+#if defined(MCU_S32K146) || defined(MCU_S32K148)
+        PCC->PCCn[PCC_PORTA_INDEX] |= PCC_PCCn_CGC_MASK; /* Clock gating to PORT A */
+        PORTA->PCR[12] |= PORT_PCR_MUX(3);               /* CAN1_RX at PORT A pin 12 */
+        PORTA->PCR[13] |= PORT_PCR_MUX(3);               /* CAN1_TX at PORT A pin 13 */
+#endif
+
+#if defined(MCU_S32K148)
+        PCC->PCCn[PCC_PORTB_INDEX] |= PCC_PCCn_CGC_MASK; /* Clock gating to PORT B */
+        PORTB->PCR[12] |= PORT_PCR_MUX(4);               /* CAN2_RX at PORT B pin 12 */
+        PORTB->PCR[13] |= PORT_PCR_MUX(4);               /* CAN2_TX at PORT B pin 13 */
+#endif
 
         /* If function ended successfully, return address of object member of type S32K_InterfaceGroup */
         out_group = &S32K_InterfaceGroupObj;
