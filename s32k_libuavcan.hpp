@@ -753,13 +753,12 @@ public:
         PCC->PCCn[ PCC_PORTA_INDEX ] |= PCC_PCCn_CGC_MASK; /* Clock gating to PORT A */
         PORTA->PCR[12] |= PORT_PCR_MUX(3);                 /* CAN1_RX at PORT A pin 12 */
         PORTA->PCR[13] |= PORT_PCR_MUX(3);                 /* CAN1_TX at PORT A pin 13 */
-
-        #else if defined( MCU_S32K148 )
+        #endif
+        
+        #if defined( MCU_S32K148 )
         PCC->PCCn[ PCC_PORTB_INDEX ] |= PCC_PCCn_CGC_MASK; /* Clock gating to PORT B */
         PORTB->PCR[12] |= PORT_PCR_MUX(4);                 /* CAN2_RX at PORT B pin 12 */
         PORTB->PCR[13] |= PORT_PCR_MUX(4);                 /* CAN2_TX at PORT B pin 13 */
-
-
         #endif
 
         /* If function ended successfully, return address of object member of type S32K_InterfaceGroup */
