@@ -567,6 +567,9 @@ public:
     /* S32K_InterfaceGroup type object member which address is returned from the next factory method */
     InterfaceGroupType S32K_InterfaceGroupObj;
 
+    /* Counter for the number of discarded messages due to the RX buffer being full */
+    std::uint32_t S32K_discarded_frames_count = 0;
+
     /**
      * Initializes the peripherals needed for libuavcan driver layer in current MCU
      * @param  filter_config         The filtering to apply equally to all FlexCAN instances.
@@ -924,6 +927,11 @@ public:
 
                 /* Insert the frame into the queue */
                 g_frame_ISRbuffer[instance].push_back(FrameISR);
+            }
+            else
+            {
+                /* Increment the counter for the number of discarded frames due to full RX deque */
+                S32K_discarded_frames_count++;
             }
 
             /* Unlock the MB by reading the timer register */
