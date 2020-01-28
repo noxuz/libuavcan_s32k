@@ -46,7 +46,7 @@
  * digital signals are set out to pin headers.
  */
 
-/* Macro for additional configuration needed when using TJA1044 transceiver 
+/* Macro for additional configuration needed when using TJA1044 transceiver
  * used in NXP's UAVCAN node board, set to 0 when using other boards  */
 #define UAVCAN_NODE_BOARD_USED 1
 
@@ -618,7 +618,7 @@ public:
         /* Poll for valid SPLL reference */
         while (!(SCG->SPLLCSR & SCG_SPLLCSR_SPLLVLD_MASK))
         {
-        }; 
+        };
 
         /* Normal RUN configuration for output clocks */
         SCG->RCCR = SCG_RCCR_SCS(6) |     /* Select SPLL as system clock source */
@@ -771,19 +771,19 @@ public:
         PCC->PCCn[PCC_PORTA_INDEX] |= PCC_PCCn_CGC_MASK; /* Clock gating to PORT A */
         PORTA->PCR[12] |= PORT_PCR_MUX(3);               /* CAN1_RX at PORT A pin 12 */
         PORTA->PCR[13] |= PORT_PCR_MUX(3);               /* CAN1_TX at PORT A pin 13 */
-        
+
         /* Set to LOW the standby (STB) pin in both transceivers of the UAVCAN node board */
-        if(UAVCAN_NODE_BOARD_USED)
+        if (UAVCAN_NODE_BOARD_USED)
         {
-            PORTE->PCR[11] |= PORT_PCR_MUX(1);  /* MUX to GPIO */
-            PTE->PDDR |= 1<<11;                 /* Set direction as output */
-            PTE->PCOR |= 1<<11;                 /* Set the pin LOW */
-            
+            PORTE->PCR[11] |= PORT_PCR_MUX(1); /* MUX to GPIO */
+            PTE->PDDR |= 1 << 11;              /* Set direction as output */
+            PTE->PCOR |= 1 << 11;              /* Set the pin LOW */
+
             PORTE->PCR[10] |= PORT_PCR_MUX(1);
-            PTE->PDDR |= 1<<10;
-            PTE->PCOR |= 1<<10;
+            PTE->PDDR |= 1 << 10;
+            PTE->PCOR |= 1 << 10;
         }
-        
+
 #endif
 
 #if defined(MCU_S32K148)
