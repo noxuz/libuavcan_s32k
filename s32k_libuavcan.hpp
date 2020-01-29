@@ -67,10 +67,13 @@
 /* Preprocessor conditionals for deducing the number of CANFD FlexCAN instances in target MCU */
 #if defined(MCU_S32K142) || defined(MCU_S32K144)
 #    define TARGET_S32K_CANFD_COUNT (1u)
+#    define DISCARD_COUNT_ARRAY 0
 #elif defined(MCU_S32K146)
 #    define TARGET_S32K_CANFD_COUNT (2u)
+#    define DISCARD_COUNT_ARRAY 0, 0
 #elif defined(MCU_S32K148)
 #    define TARGET_S32K_CANFD_COUNT (3u)
+#    define DISCARD_COUNT_ARRAY 0, 0, 0
 #else
 #    error "No NXP S32K compatible MCU header file included"
 #endif
@@ -91,7 +94,7 @@ std::deque<CAN::Frame<CAN::TypeFD::MaxFrameSizeBytes>,
     g_frame_ISRbuffer[S32K_CANFD_Count];
 
 /* Counter for the number of discarded messages due to the RX buffer being full */
-std::uint32_t g_S32K_discarded_frames_count = 0;
+std::uint32_t g_S32K_discarded_frames_count[S32K_CANFD_Count] = {DISCARD_COUNT_ARRAY};
 
 /* Number of filters supported by a single FlexCAN instance */
 constexpr static std::uint8_t S32K_Filter_Count = 5u;
@@ -933,7 +936,7 @@ public:
             else
             {
                 /* Increment the number of discarded frames due to full RX dequeue */
-                g_S32K_discarded_frames_count++;
+                g_S32K_discarded_frames_count[instance]++;
             }
 
             /* Unlock the MB by reading the timer register */
