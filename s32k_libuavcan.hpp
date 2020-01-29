@@ -40,6 +40,8 @@
  * CAN1 TX: PTA13
  * CAN2 RX: PTB12
  * CAN2 TX: PTB13
+ * PTE10: CAN0 transceiver STB (UAVCAN node board only)
+ * PTE11: CAN1 transceiver STB (UAVCAN node board only)
  *
  * S32K146 and S32K148 although having multiple CANFD instances
  * their evb's have only one transceiver, the other instances's
@@ -87,6 +89,9 @@ constexpr static std::size_t S32K_Frame_Capacity = 40u;
 std::deque<CAN::Frame<CAN::TypeFD::MaxFrameSizeBytes>,
            platform::memory::PoolAllocator<S32K_Frame_Capacity, sizeof(CAN::Frame<CAN::TypeFD::MaxFrameSizeBytes>)>>
     g_frame_ISRbuffer[S32K_CANFD_Count];
+
+/* Counter for the number of discarded messages due to the RX buffer being full */
+std::uint32_t g_S32K_discarded_frames_count = 0;
 
 /* Number of filters supported by a single FlexCAN instance */
 constexpr static std::uint8_t S32K_Filter_Count = 5u;
@@ -567,9 +572,6 @@ public:
     /* S32K_InterfaceGroup type object member which address is returned from the next factory method */
     InterfaceGroupType S32K_InterfaceGroupObj;
 
-    /* Counter for the number of discarded messages due to the RX buffer being full */
-    std::uint32_t S32K_discarded_frames_count = 0;
-
     /**
      * Initializes the peripherals needed for libuavcan driver layer in current MCU
      * @param  filter_config         The filtering to apply equally to all FlexCAN instances.
@@ -930,8 +932,8 @@ public:
             }
             else
             {
-                /* Increment the counter for the number of discarded frames due to full RX deque */
-                S32K_discarded_frames_count++;
+                /* Increment the number of discarded frames due to full RX dequeue */
+                g_S32K_discarded_frames_count++;
             }
 
             /* Unlock the MB by reading the timer register */
