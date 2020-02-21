@@ -571,10 +571,11 @@ public:
  */
 class S32K_InterfaceManager : private InterfaceManager<S32K_InterfaceGroup, S32K_InterfaceGroup*>
 {
-public:
+private:
     /* S32K_InterfaceGroup type object member which address is returned from the next factory method */
     InterfaceGroupType S32K_InterfaceGroupObj;
-
+    
+public:
     /**
      * Initializes the peripherals needed for libuavcan driver layer in current MCU
      * @param  filter_config         The filtering to apply equally to all FlexCAN instances.
