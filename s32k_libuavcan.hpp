@@ -254,22 +254,14 @@ public:
                 /* Get data length of the frame wished to be written */
                 std::uint_fast8_t payloadLength = frames[0].getDataLength();
 
-                /* Fill up payload from MSB to LSB in function of frame's dlc */
-                for (std::uint8_t i = 0; i < (payloadLength >> 2); i++)
-                {
-                    /* Build up each 32 bit word with 4 indices from frame.data uint8_t array */
-                    FlexCAN[interface_index - 1]->RAMn[0 * MB_Size_Words + MB_Data_Offset + i] =
-                        (static_cast<std::uint32_t>(frames[0].data[(i << 2) + 0] << 24)) |
-                        (static_cast<std::uint32_t>(frames[0].data[(i << 2) + 1] << 16)) |
-                        (static_cast<std::uint32_t>(frames[0].data[(i << 2) + 2] << 8)) |
-                        (frames[0].data[(i << 2) + 3] << 0);
-                }
+                /* Casting of the original uint8 payload to native 32-bit for single cycle transfers */
+                std::uint32_t* frameData = reinterpret_cast<std::uint32_t*>(const_cast<std::uint8_t*>(frames[0].data)); 
 
-                /* Fill up payload of frame's bytes that dont fill upa 32-bit word,(0,1,2,3,5,6,7 byte data length)*/
-                for (std::uint8_t i = 0; i < (payloadLength & 0x3); i++)
+                /* Transfer of payload to the message buffer, this method includes payloads that don't 
+                   fill up entire words, e.g. 3,5 byte paylodas */
+                for( std::uint8_t i = 0; i< ((payloadLength >> 2) + std::min(1, (payloadLength & 0x3)) ) i++)
                 {
-                    FlexCAN[interface_index - 1]->RAMn[0 * MB_Size_Words + MB_Data_Offset + (payloadLength >> 2)] |=
-                        static_cast<std::uint32_t>(frames[0].data[((payloadLength >> 2) << 2) + i] << ((3 - i) << 3));
+                    FlexCAN[interface_index - 1]->RAMn[0 * MB_Size_Words + MB_Data_Offset + i] = frameData[i];
                 }
 
                 /* Fill up frame ID */
@@ -888,8 +880,6 @@ public:
             /* Receive a frame only if the buffer its under its capacity */
             if (g_frame_ISRbuffer[instance].size() <= S32K_Frame_Capacity)
             {
-                /* Parse the Message buffer, read of the control and status word locks the MB */
-
                 /* Get the raw DLC from the message buffer that received a frame */
                 std::uint32_t dlc_ISR_raw =
                     ((FlexCAN[instance]->RAMn[MB_index * S32K_InterfaceGroup::MB_Size_Words + 0]) &
@@ -906,30 +896,19 @@ public:
                 std::uint32_t id_ISR =
                     (FlexCAN[instance]->RAMn[MB_index * S32K_InterfaceGroup::MB_Size_Words + 1]) & CAN_WMBn_ID_ID_MASK;
 
-                /* Array for parsing from native uint32_t to uint8_t */
-                std::uint8_t data_ISR_byte[payloadLength_ISR];
+                /* Array for harvesting the payload in native 32-bit words */
+                std::uint32_t data_ISR_word[(payloadLength_ISR>>2) + std::min(1,(payloadLength_ISR & 0x3))];
 
-                /* Parse the full words of the MB in bytes */
-                for (std::uint8_t i = 0; i < payloadLength_ISR; i++)
+                /* Realize the transfer, including bytes that don't fill up a word, e.g. 3,5 byte paylodas */
+                for( std::uint8_t i = 0; i < ((payloadLength_ISR>>2) + std::min(1,(payloadLength_ISR & 0x3))) ;i++)
                 {
-                    data_ISR_byte[i] = (FlexCAN[instance]->RAMn[MB_index * S32K_InterfaceGroup::MB_Size_Words +
-                                                                S32K_InterfaceGroup::MB_Data_Offset + (i >> 2)] &
-                                        (0xFF << ((3 - (i & 0x3)) << 3))) >>
-                                       ((3 - (i & 0x3)) << 3);
-                }
-
-                /* Parse remaining bytes that don't complete up to a word if there are */
-                for (std::uint8_t i = 0; i < (payloadLength_ISR & 0x3); i++)
-                {
-                    data_ISR_byte[payloadLength_ISR - (payloadLength_ISR & 0x3) + i] =
-                        (FlexCAN[instance]->RAMn[MB_index * S32K_InterfaceGroup::MB_Data_Offset +
-                                                 S32K_InterfaceGroup::MB_Data_Offset + (payloadLength_ISR >> 2)] &
-                         (0xFF << ((3 - i) << 3))) >>
-                        ((3 - i) << 3);
+                    data_ISR_word[i] = FlexCAN[instance]->RAMn[MB_index * S32K_InterfaceGroup::MB_Size_Words +
+                                                                        S32K_InterfaceGroup::MB_Data_Offset + i ];
                 }
 
                 /* Create Frame object with constructor */
-                CAN::Frame<CAN::TypeFD::MaxFrameSizeBytes> FrameISR(id_ISR, data_ISR_byte, dlc_ISR, timestamp_ISR);
+                CAN::Frame<CAN::TypeFD::MaxFrameSizeBytes> FrameISR(id_ISR, reinterpret_cast<std::uint8_t*>(data_ISR_word), 
+                                                                                                dlc_ISR, timestamp_ISR);
 
                 /* Insert the frame into the queue */
                 g_frame_ISRbuffer[instance].push_back(FrameISR);
