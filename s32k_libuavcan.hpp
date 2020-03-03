@@ -226,7 +226,7 @@ private:
         for (std::uint8_t i = 0; i < std::min(1, (static_cast<std::uint8_t>(payloadLength) & 0x3)); i++)
         {
             FlexCAN[iface_index]->RAMn[TX_MB_index * MB_Size_Words + MB_Data_Offset + (payloadLength >> 2)] =
-                (native_FrameData[payloadLength >> 2]) << (8 * (4 - (payloadLength & 0x3)));
+                (native_FrameData[payloadLength >> 2]) << ((4 - (payloadLength & 0x3)) << 3);
         }
 
         /* Fill up frame ID */
