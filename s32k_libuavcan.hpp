@@ -301,7 +301,6 @@ public:
             
             /* Argument assignment to 1 Frame transmitted successfully */
             out_frames_written = 1u;
-    
         }
         
         /* Return status code */
