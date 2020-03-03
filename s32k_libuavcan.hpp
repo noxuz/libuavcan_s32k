@@ -321,7 +321,7 @@ public:
                                    std::size_t& out_frames_read) override
     {
         /* Initialize return value and out_frames_read output reference value */
-        libuavcan::Result Status = libuavcan::Result::Success;
+        libuavcan::Result Status = libuavcan::Result::SuccessNothing;
         out_frames_read          = 0;
 
         /* Input validation */
