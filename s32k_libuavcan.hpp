@@ -358,10 +358,8 @@ public:
     }
 
     /**
-     * Reconfigure reception filters for dynamic subscription of nodes
-     * NOTE: Since filter Iindex to reconfigure isn't provided, only up
-     *       to which filter to modify, the filters in the range
-     *       (filter_config_length, S32K_Filter_Count ] are left unaltered.
+     * Reconfigure reception filters for dynamic subscription of nodes, all the previous filter configurations are
+     * cleared.
      * @param  filter_config         The filtering to apply equally to all members of the group.
      * @param  filter_config_length  The length of the @p filter_config argument.
      * @return libuavcan::Result::Success if the group's receive filtering was successfully reconfigured.
@@ -387,10 +385,20 @@ public:
                 /* Enter freeze mode for filter reconfiguration */
                 FlexCAN[i]->MCR |= (CAN_MCR_HALT_MASK | CAN_MCR_FRZ_MASK);
 
-                /* Block for freeze mode entry, halts any transmission or  */
+                /* Block for freeze mode entry, halts any transmission or reception */
                 if (isSuccess(Status))
                 {
-                    Status = flagPollTimeout_Set(FlexCAN[i]->MCR, CAN_MCR_FRZACK_MASK);
+                    /* Reset all previouss filter configurations */
+                    for (std::uint8_t j = 0; j < CAN_RAMn_COUNT; j++)
+                    {
+                        FlexCAN[i]->RAMn[j] = 0;
+                    }
+
+                    /* Clear the reception masks before configuring the new ones needed */
+                    for (std::uint8_t j = 0; j < CAN_RXIMR_COUNT; j++)
+                    {
+                        FlexCAN[i]->RXIMR[j] = 0;
+                    }
 
                     for (std::uint8_t j = 0; j < filter_config_length; j++)
                     {
