@@ -246,7 +246,7 @@ private:
         FlexCAN[iface_index]->RAMn[TX_MB_index * MB_Size_Words] =
             CAN_RAMn_DATA_BYTE_1(0x20) | CAN_WMBn_CS_DLC(frame.getDLC()) | CAN_RAMn_DATA_BYTE_0(0xCC);
 
-        /* Return successfull transmission request status */
+        /* Return successful transmission request status */
         return libuavcan::Result::Success;
     }
 
