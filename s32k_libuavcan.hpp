@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2020, NXP. All rights reserved.
- * Distributed under the MIT License, available in the file LICENSE.
+ * Distributed under the BSD-3-Clause-LBNL license, available in the file LICENSE.
  * Author: Abraham Rodriguez <abraham.rodriguez@nxp.com>
  */
 
