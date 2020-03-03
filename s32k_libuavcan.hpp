@@ -186,54 +186,6 @@ libuavcan::Result flagPollTimeout_Clear(volatile std::uint32_t& flagRegister, st
     return libuavcan::Result::Failure;
 }
 
-/**
- * Helper function for an immediate transmission through an available message buffer
- *
- * @param  TX_MB_index The index from an already polled available message buffer. 
- * @param  frame The individual frame being transmitted.
- * @return libuavcan::Result:Success After a successfull transmission request.
- */
-libuavcan::Result messageBuffer_Transmit(std::uint_fast8_t iface_index, std::uint8_t TX_MB_index, FrameType &frame)
-{
-    /* Get data length of the frame wished to be written */
-    std::uint_fast8_t payloadLength = frame.getDataLength();
-
-    /* Casting from uint8 to native uint32 for faster payload transfer to transmission message buffer */
-    std::uint32_t* native_FrameData = reinterpret_cast<std::uint32_t*>(frame.data);
-
-    /* Fill up the payload's complete 4-byte words */
-    for( std::uint8_t i = 0; i < (payloadLength >> 2); i++)
-    {
-        FlexCAN[iface_index]->RAMn[TX_MB_index * MB_Size_Words + MB_Data_Offset +i] = native_FrameData[i];
-    }
-
-    /* Transfer of frame's bytes that don't fill up to a complete 32-bit word,(0,1,2,3,5,6,7 byte data length payloads)*/
-    for (std::uint8_t i = 0; i < std::min(1, (static_cast<std::uint8_t>(payloadLength) & 0x3)); i++)
-    {
-        FlexCAN[iface_index]->RAMn[TX_MB_index * MB_Size_Words + MB_Data_Offset + (payloadLength >> 2) ] =
-                (native_FrameData[ payloadLength >> 2 ]) << (8* (4-(payloadLength & 0x3)) );
-    }
-
-    /* Fill up frame ID */
-    FlexCAN[iface_index]->RAMn[TX_MB_index * MB_Size_Words + 1] = frame.id & CAN_WMBn_ID_ID_MASK;
-
-    /* Fill up word 0 of frame and transmit it
-     * Extended Data Length       (EDL) = 1
-     * Bit Rate Switch            (BRS) = 1
-     * Error State Indicator      (ESI) = 0
-     * Message Buffer Code       (CODE) = 12 ( Transmit data frame )
-     * Substitute Remote Request  (SRR) = 0
-     * ID Extended Bit            (IDE) = 1
-     * Remote Tx Request          (RTR) = 0
-     * Data Length Code           (DLC) = frame.getdlc()
-     * Counter Time Stamp  (TIME STAMP) = 0 ( Handled by hardware )
-     */
-    FlexCAN[iface_index]->RAMn[TX_MB_index * MB_Size_Words] =
-        CAN_RAMn_DATA_BYTE_1(0x20) | CAN_WMBn_CS_DLC(frame.getDLC()) | CAN_RAMn_DATA_BYTE_0(0xCC);
-
-    /* Return successfull transmission request status */
-    return libuavcan::Result::Success;
-}
 
 /**
  * S32K CanFD driver layer InterfaceGroup
@@ -246,6 +198,57 @@ libuavcan::Result messageBuffer_Transmit(std::uint_fast8_t iface_index, std::uin
  */
 class S32K_InterfaceGroup : public InterfaceGroup<CAN::Frame<CAN::TypeFD::MaxFrameSizeBytes>>
 {
+private:
+	/**
+	 * Helper function for an immediate transmission through an available message buffer
+	 *
+	 * @param  TX_MB_index The index from an already polled available message buffer.
+	 * @param  frame The individual frame being transmitted.
+	 * @return libuavcan::Result:Success After a successfull transmission request.
+	 */
+	libuavcan::Result messageBuffer_Transmit(std::uint_fast8_t iface_index, std::uint8_t TX_MB_index, const FrameType &frame)
+	{
+	    /* Get data length of the frame wished to be written */
+	    std::uint_fast8_t payloadLength = frame.getDataLength();
+
+	    /* Casting from uint8 to native uint32 for faster payload transfer to transmission message buffer */
+	    std::uint32_t* native_FrameData = reinterpret_cast<std::uint32_t*>(const_cast<std::uint8_t*>(frame.data));
+
+	    /* Fill up the payload's complete 4-byte words */
+	    for( std::uint8_t i = 0; i < (payloadLength >> 2); i++)
+	    {
+	        FlexCAN[iface_index]->RAMn[TX_MB_index * MB_Size_Words + MB_Data_Offset +i] = native_FrameData[i];
+	    }
+
+	    /* Transfer of frame's bytes that don't fill up to a complete 32-bit word,(0,1,2,3,5,6,7 byte data length payloads)*/
+	    for (std::uint8_t i = 0; i < std::min(1, (static_cast<std::uint8_t>(payloadLength) & 0x3)); i++)
+	    {
+	        FlexCAN[iface_index]->RAMn[TX_MB_index * MB_Size_Words + MB_Data_Offset + (payloadLength >> 2) ] =
+	                (native_FrameData[ payloadLength >> 2 ]) << (8* (4-(payloadLength & 0x3)) );
+	    }
+
+	    /* Fill up frame ID */
+	    FlexCAN[iface_index]->RAMn[TX_MB_index * MB_Size_Words + 1] = frame.id & CAN_WMBn_ID_ID_MASK;
+
+	    /* Fill up word 0 of frame and transmit it
+	     * Extended Data Length       (EDL) = 1
+	     * Bit Rate Switch            (BRS) = 1
+	     * Error State Indicator      (ESI) = 0
+	     * Message Buffer Code       (CODE) = 12 ( Transmit data frame )
+	     * Substitute Remote Request  (SRR) = 0
+	     * ID Extended Bit            (IDE) = 1
+	     * Remote Tx Request          (RTR) = 0
+	     * Data Length Code           (DLC) = frame.getdlc()
+	     * Counter Time Stamp  (TIME STAMP) = 0 ( Handled by hardware )
+	     */
+	    FlexCAN[iface_index]->RAMn[TX_MB_index * MB_Size_Words] =
+	        CAN_RAMn_DATA_BYTE_1(0x20) | CAN_WMBn_CS_DLC(frame.getDLC()) | CAN_RAMn_DATA_BYTE_0(0xCC);
+
+	    /* Return successfull transmission request status */
+	    return libuavcan::Result::Success;
+
+	}
+
 public:
     /* Size in words (4 bytes) of the offset between message buffers */
     constexpr static std::uint8_t MB_Size_Words = 18u;
@@ -286,23 +289,23 @@ public:
 
         /* Variable for searching for an available message buffer for transmission */
         std::uint8_t mb_index = 0;
-        
+
         /* Poll the Inactive Message Buffer and Valid Priority Status flags before checking for free MB's */
         if( (FlexCAN[interface_index - 1]->ESR2 & CAN_ESR2_IMB_MASK ) && (FlexCAN[interface_index - 1]->ESR2 & CAN_ESR2_VPS_MASK) )
         {
             /* Look for the lowest number free MB */
             mb_index = (FlexCAN[interface_index - 1]->ESR2 & CAN_ESR2_LPTM_MASK) >> CAN_ESR2_LPTM_SHIFT;
-            
+
             /* Clear any pending interrupt flag from the found MB */
             FlexCAN[interface_index - 1]->IFLAG1 |= 1 << mb_index;
-                
+
             /* Proceed with the tranmission */
             Status = messageBuffer_Transmit(interface_index - 1, mb_index, frames[0]);
-            
+
             /* Argument assignment to 1 Frame transmitted successfully */
             out_frames_written = 1u;
         }
-        
+
         /* Return status code */
         return Status;
     }
