@@ -1,5 +1,5 @@
 # Style file 
-*.clang-format
+*._clang-format
 
 # Prerequisites
 *.d
