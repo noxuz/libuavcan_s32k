@@ -64,6 +64,9 @@
 /* STL queue for the intermediate ISR buffer */
 #include <deque>
 
+/* CMSIS Core for __REV macro use */
+#include "s32_core_cm4.h"
+
 /* Preprocessor conditionals for deducing the number of CANFD FlexCAN instances in target MCU */
 #if defined(MCU_S32K142) || defined(MCU_S32K144)
 #    define TARGET_S32K_CANFD_COUNT (1u)
@@ -203,7 +206,7 @@ private:
      *
      * @param  TX_MB_index The index from an already polled available message buffer.
      * @param  frame The individual frame being transmitted.
-     * @return libuavcan::Result:Success After a successfull transmission request.
+     * @return libuavcan::Result:Success after a successful transmission request.
      */
     libuavcan::Result messageBuffer_Transmit(std::uint_fast8_t iface_index,
                                              std::uint8_t      TX_MB_index,
@@ -215,18 +218,16 @@ private:
         /* Casting from uint8 to native uint32 for faster payload transfer to transmission message buffer */
         std::uint32_t* native_FrameData = reinterpret_cast<std::uint32_t*>(const_cast<std::uint8_t*>(frame.data));
 
-        /* Fill up the payload's complete 4-byte words */
-        for (std::uint8_t i = 0; i < (payloadLength >> 2); i++)
+        /* Fill up the payload's bytes, including the ones that don't add up to a full word e.g. 1,2,3,5,6,7 byte data
+         * length payloads */
+        for (std::uint8_t i = 0;
+             i < (payloadLength >> 2) + std::min(1, (static_cast<std::uint8_t>(payloadLength) & 0x3));
+             i++)
         {
-            FlexCAN[iface_index]->RAMn[TX_MB_index * MB_Size_Words + MB_Data_Offset + i] = native_FrameData[i];
-        }
-
-        /* Transfer of frame's bytes that don't fill up to a complete 32-bit word,(0,1,2,3,5,6,7 byte data length
-         * payloads)*/
-        for (std::uint8_t i = 0; i < std::min(1, (static_cast<std::uint8_t>(payloadLength) & 0x3)); i++)
-        {
-            FlexCAN[iface_index]->RAMn[TX_MB_index * MB_Size_Words + MB_Data_Offset + (payloadLength >> 2)] =
-                (native_FrameData[payloadLength >> 2]) << ((4 - (payloadLength & 0x3)) << 3);
+            /* FlexCAN natively transmits the bytes in big-endian order, in order to transmit little-endian for UAVCAN,
+             * a byte swap is required */
+            REV_BYTES_32(native_FrameData[i],
+                         FlexCAN[iface_index]->RAMn[TX_MB_index * MB_Size_Words + MB_Data_Offset + i]);
         }
 
         /* Fill up frame ID */
@@ -388,7 +389,7 @@ public:
                 /* Block for freeze mode entry, halts any transmission or reception */
                 if (isSuccess(Status))
                 {
-                    /* Reset all previouss filter configurations */
+                    /* Reset all previous filter configurations */
                     for (std::uint8_t j = 0; j < CAN_RAMn_COUNT; j++)
                     {
                         FlexCAN[i]->RAMn[j] = 0;
@@ -498,7 +499,7 @@ public:
             delta = LPIT_TMR_CVAL_TMR_CUR_VAL_MASK - (LPIT0->TMR[3].CVAL);
         }
 
-        /* If this section is reached, means timeout ocurred and return timeout status */
+        /* If this section is reached, means timeout occurred and return timeout status */
         return libuavcan::Result::SuccessTimeout;
     }
 };
@@ -847,22 +848,19 @@ public:
                 std::uint32_t id_ISR =
                     (FlexCAN[instance]->RAMn[MB_index * S32K_InterfaceGroup::MB_Size_Words + 1]) & CAN_WMBn_ID_ID_MASK;
 
-                /* Array for harvesting the words in the case of payloads of complete words */
+                /* Array for harvesting the received frame's payload */
                 std::uint32_t data_ISR_word[(payloadLength_ISR >> 2) + std::min(1, (payloadLength_ISR & 0x3))];
 
-                for (std::uint8_t i = 0; i < (payloadLength_ISR >> 2); i++)
+                /* Perform the harvesting of the payload, leveraging from native 32-bit transfers and since the FlexCAN
+                 * expects the data to be in big-endian order, a byte swap is required from the little-endian
+                 * transmission UAVCAN requirement */
+                for (std::uint8_t i = 0;
+                     i < (payloadLength_ISR >> 2) + std::min(1, static_cast<std::uint8_t>(payloadLength_ISR) & 0x3);
+                     i++)
                 {
-                    data_ISR_word[i] = FlexCAN[instance]->RAMn[MB_index * S32K_InterfaceGroup::MB_Size_Words +
-                                                               S32K_InterfaceGroup::MB_Data_Offset + i];
-                }
-
-                /* Harvest remaining bytes that don't complete up to a word if there are */
-                for (std::uint8_t i = 0; i < std::min(1, static_cast<std::uint8_t>(payloadLength_ISR) & 0x3); i++)
-                {
-                    data_ISR_word[payloadLength_ISR >> 2] =
-                        (FlexCAN[instance]->RAMn[MB_index * S32K_InterfaceGroup::MB_Size_Words +
-                                                 S32K_InterfaceGroup::MB_Data_Offset + (payloadLength_ISR >> 2)]) >>
-                        ((4 - (payloadLength_ISR & 0x3)) << 3);
+                    REV_BYTES_32(FlexCAN[instance]->RAMn[MB_index * S32K_InterfaceGroup::MB_Size_Words +
+                                                         S32K_InterfaceGroup::MB_Data_Offset + i],
+                                 data_ISR_word[i]);
                 }
 
                 /* Create Frame object with constructor */
