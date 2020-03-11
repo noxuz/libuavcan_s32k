@@ -34,9 +34,9 @@
  * FLASH_CLK: 26.67Mhz
  *
  * Dividers:
- * SOSCDIV2 = 8
+ * SPLLDIV2 = 1
  *
- * LPIT source = SOSCDIV2 (1Mhz)
+ * LPIT source = SPLLDIV2 (80Mhz)
  * FlexCAN source = SYS_CLK (80Mhz)
  *
  * Asynchronous dividers not mentioned are left unset and SCG registers are locked
@@ -98,6 +98,8 @@ std::deque<CAN::Frame<CAN::TypeFD::MaxFrameSizeBytes>,
 
 /* Counter for the number of discarded messages due to the RX buffer being full */
 std::uint32_t g_S32K_discarded_frames_count[S32K_CANFD_Count] = {DISCARD_COUNT_ARRAY};
+
+std::uint64_t target_prevoius = 0;
 
 /* Number of filters supported by a single FlexCAN instance */
 constexpr static std::uint8_t S32K_Filter_Count = 5u;
@@ -550,7 +552,6 @@ public:
         SCG->SOSCCSR &= ~SCG_SOSCCSR_SOSCEN_MASK; /* Disable SOSC for setup */
         SCG->SOSCCFG = SCG_SOSCCFG_EREFS_MASK |   /* Setup external crystal for SOSC reference */
                        SCG_SOSCCFG_RANGE(2);      /* Select 8Mhz range */
-        SCG->SOSCDIV |= SCG_SOSCDIV_SOSCDIV2(4);  /* Divider of 8 for LPIT clock source, gets 1Mhz reference */
         SCG->SOSCCSR = SCG_SOSCCSR_SOSCEN_MASK;   /* Enable SOSC reference */
         SCG->SOSCCSR |= SCG_SOSCCSR_LK_MASK;      /* Lock the register from accidental writes */
 
@@ -563,6 +564,7 @@ public:
         SCG->SPLLCSR &= ~SCG_SPLLCSR_LK_MASK;     /* Ensure the register is unlocked */
         SCG->SPLLCSR &= ~SCG_SPLLCSR_SPLLEN_MASK; /* Disable PLL for setup */
         SCG->SPLLCFG = SCG_SPLLCFG_MULT(24);      /* Select multiply factor of 40 for 160Mhz SPLL_CLK */
+        SCG->SPLLDIV |= SCG_SPLLDIV_SPLLDIV2(1);  /* Divide by 1 for 80Mhz at SPLLDIV2 output for LPIT */
         SCG->SPLLCSR |= SCG_SPLLCSR_SPLLEN_MASK;  /* Enable PLL */
         SCG->SPLLCSR |= SCG_SPLLCSR_LK_MASK;      /* Lock register from accidental writes */
 
@@ -578,8 +580,8 @@ public:
 
         /* CAN frames timestamping 64-bit timer initialization using chained LPIT channel 0 and 1 */
 
-        /* Clock source option 1: (SOSCDIV2) at 1Mhz clearing previous bit configuration */
-        PCC->PCCn[PCC_LPIT_INDEX] |= PCC_PCCn_PCS(1);
+        /* Clock source option 6: (SPLLDIV2) at 80Mhz */
+        PCC->PCCn[PCC_LPIT_INDEX] |= PCC_PCCn_PCS(6);
         PCC->PCCn[PCC_LPIT_INDEX] |= PCC_PCCn_CGC(1); /* Clock gating to LPIT module */
 
         /* Enable module */
@@ -796,12 +798,6 @@ public:
     /* FlexCAN ISR for frame reception */
     static void S32K_libuavcan_ISR(std::uint8_t instance)
     {
-        /* Before anything, get a timestamp  */
-        std::uint64_t LPIT_timestamp_ISR = static_cast<std::uint64_t>(
-            (static_cast<std::uint64_t>(0xFFFFFFFF - LPIT0->TMR[1].CVAL) << 32) | (0xFFFFFFFF - LPIT0->TMR[0].CVAL));
-
-        time::Monotonic timestamp_ISR = time::Monotonic::fromMicrosecond(LPIT_timestamp_ISR);
-
         /* Initialize variable for finding which MB received */
         std::uint8_t MB_index = 0;
 
@@ -834,8 +830,7 @@ public:
 
                 /* Get the raw DLC from the message buffer that received a frame */
                 std::uint32_t dlc_ISR_raw =
-                    ((FlexCAN[instance]->RAMn[MB_index * S32K_InterfaceGroup::MB_Size_Words + 0]) &
-                     CAN_WMBn_CS_DLC_MASK) >>
+                    ((FlexCAN[instance]->RAMn[MB_index * S32K_InterfaceGroup::MB_Size_Words]) & CAN_WMBn_CS_DLC_MASK) >>
                     CAN_WMBn_CS_DLC_SHIFT;
 
                 /* Create CAN::FrameDLC type variable from the raw dlc */
@@ -863,6 +858,39 @@ public:
                                  data_ISR_word[i]);
                 }
 
+                /* Get monotonic time */
+                std::uint64_t monotone =
+                    static_cast<std::uint64_t>((static_cast<std::uint64_t>(0xFFFFFFFF - LPIT0->TMR[1].CVAL) << 32) |
+                                               (0xFFFFFFFF - LPIT0->TMR[0].CVAL));
+
+                /* Timestamp resolving, first, compute delta of target */
+                std::uint64_t target_delta = static_cast<std::int64_t>(monotone - target_prevoius);
+
+                /* Harvest the frame's 16-bit hardware timestamp */
+                std::uint32_t timestamp_HW =
+                    FlexCAN[instance]->RAMn[MB_index * S32K_InterfaceGroup::MB_Size_Words] & 0xFFFF;
+
+                /* Compute source clock delta and unlocks the MB */
+                std::int32_t source_delta = static_cast<std::int32_t>(FlexCAN[instance]->TIMER - timestamp_HW);
+
+                /* Resolve the number of overflows that occurred in the source clock, (counts from 0 to 0xFFFF so period
+                 * is 0x10000) */
+                std::uint64_t overflows_count =
+                    static_cast<std::uint64_t>(static_cast<std::uint64_t>(target_delta - source_delta) / 0x10000);
+
+                std::uint64_t resolved_timestamp_ISR = static_cast<std::uint64_t>(overflows_count * 0x10000);
+
+                resolved_timestamp_ISR = static_cast<std::uint64_t>(resolved_timestamp_ISR + source_delta);
+
+                resolved_timestamp_ISR =
+                    (std::uint64_t)(static_cast<std::uint64_t>(resolved_timestamp_ISR + target_prevoius) / 80);
+
+                /* Update the previous */
+                target_prevoius = monotone;
+
+                /* Instantiate monotonic object form the resolved timestamp */
+                time::Monotonic timestamp_ISR = time::Monotonic::fromMicrosecond(resolved_timestamp_ISR);
+
                 /* Create Frame object with constructor */
                 CAN::Frame<CAN::TypeFD::MaxFrameSizeBytes> FrameISR(id_ISR,
                                                                     reinterpret_cast<std::uint8_t*>(data_ISR_word),
@@ -877,9 +905,6 @@ public:
                 /* Increment the number of discarded frames due to full RX dequeue */
                 g_S32K_discarded_frames_count[instance]++;
             }
-
-            /* Unlock the MB by reading the timer register */
-            (void) FlexCAN[instance]->TIMER;
 
             /* Clear MB interrupt flag (write 1 to clear)*/
             FlexCAN[instance]->IFLAG1 |= (1 << MB_index);
