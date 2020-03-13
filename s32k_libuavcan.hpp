@@ -858,32 +858,38 @@ public:
                                  data_ISR_word[i]);
                 }
 
+
+
+                /* Harvest the frame's 16-bit hardware timestamp */
+                std::uint64_t timestamp_HW =
+                    FlexCAN[instance]->RAMn[MB_index * S32K_InterfaceGroup::MB_Size_Words] & 0xFFFF;
+
+                std::uint64_t FlexCAN_timestamp = FlexCAN[instance]->TIMER;
+                 
+                std::uint64_t overflow_offset;
+                 
+                FlexCAN_timestamp < timestamp_HW ? overflow_offset = 1 : overflow_offset = 0;
+
+
+                /* Compute source clock delta and unlocks the MB */
+                std::uint64_t source_delta = FlexCAN_timestamp- timestamp_HW;
+
                 /* Get monotonic time */
                 std::uint64_t monotone =
                     static_cast<std::uint64_t>((static_cast<std::uint64_t>(0xFFFFFFFF - LPIT0->TMR[1].CVAL) << 32) |
                                                (0xFFFFFFFF - LPIT0->TMR[0].CVAL));
 
                 /* Timestamp resolving, first, compute delta of target */
-                std::uint64_t target_delta = static_cast<std::int64_t>(monotone - target_prevoius);
+                std::uint64_t target_delta = monotone - target_prevoius;
 
-                /* Harvest the frame's 16-bit hardware timestamp */
-                std::uint32_t timestamp_HW =
-                    FlexCAN[instance]->RAMn[MB_index * S32K_InterfaceGroup::MB_Size_Words] & 0xFFFF;
-
-                /* Compute source clock delta and unlocks the MB */
-                std::int32_t source_delta = static_cast<std::int32_t>(FlexCAN[instance]->TIMER - timestamp_HW);
 
                 /* Resolve the number of overflows that occurred in the source clock, (counts from 0 to 0xFFFF so period
                  * is 0x10000) */
-                std::uint64_t overflows_count =
-                    static_cast<std::uint64_t>(static_cast<std::uint64_t>(target_delta - source_delta) / 0x10000);
+                std::uint64_t overflows_count = (target_delta - source_delta) / 0x10000;
+                    
+                std::uint64_t resolved_timestamp_ISR = (overflows_count - overflow_offset) * 0x10000;
 
-                std::uint64_t resolved_timestamp_ISR = static_cast<std::uint64_t>(overflows_count * 0x10000);
-
-                resolved_timestamp_ISR = static_cast<std::uint64_t>(resolved_timestamp_ISR + source_delta);
-
-                resolved_timestamp_ISR =
-                    (std::uint64_t)(static_cast<std::uint64_t>(resolved_timestamp_ISR + target_prevoius) / 80);
+                resolved_timestamp_ISR = (resolved_timestamp_ISR + source_delta + target_prevoius)/80;
 
                 /* Update the previous */
                 target_prevoius = monotone;
