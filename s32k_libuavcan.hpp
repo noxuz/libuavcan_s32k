@@ -114,7 +114,7 @@ constexpr static CAN_Type* FlexCAN[] = CAN_BASE_PTRS;
 constexpr static std::uint8_t PCC_FlexCAN_Index[] = {36u, 37u, 43u};
 
 /**
- * Helper function for block polling a bit flag until its set with a timeout of 1 second using a LPIT timer
+ * Helper function for block polling a bit flag until its set with a timeout of 0.2 seconds using a LPIT timer
  *
  * @param  flagRegister Register where the flag is located.
  * @param  flagMask Mask to AND'nd with the register for isolating the flag.
@@ -123,8 +123,8 @@ constexpr static std::uint8_t PCC_FlexCAN_Index[] = {36u, 37u, 43u};
  */
 libuavcan::Result flagPollTimeout_Set(volatile std::uint32_t& flagRegister, std::uint32_t flag_Mask)
 {
-    constexpr std::uint32_t cycles_timeout = 0xFFFFF; /* Timeout of 1/(1Mhz) * 2^20 = 1.04 seconds approx */
-    volatile std::uint32_t  delta          = 0;       /* Declaration of delta for comparision */
+    constexpr std::uint32_t cycles_timeout = 0xFFFFFF; /* Timeout of 1/(80Mhz) * 2^24 = 0.2 seconds approx */
+    volatile std::uint32_t  delta          = 0;        /* Declaration of delta for comparision */
 
     /* Disable LPIT channel 3 for loading */
     LPIT0->CLRTEN |= LPIT_CLRTEN_CLR_T_EN_3(1);
@@ -153,7 +153,7 @@ libuavcan::Result flagPollTimeout_Set(volatile std::uint32_t& flagRegister, std:
 }
 
 /**
- * Helper function for block polling a bit flag until its cleared with a timeout of 1 second using a LPIT timer
+ * Helper function for block polling a bit flag until its cleared with a timeout of 0.2 seconds using a LPIT timer
  *
  * @param  flagRegister Register where the flag is located.
  * @param  flagMask Mask to AND'nd with the register for isolating the flag.
@@ -162,8 +162,8 @@ libuavcan::Result flagPollTimeout_Set(volatile std::uint32_t& flagRegister, std:
  */
 libuavcan::Result flagPollTimeout_Clear(volatile std::uint32_t& flagRegister, std::uint32_t flag_Mask)
 {
-    constexpr std::uint32_t cycles_timeout = 0xFFFFF; /* Timeout of 1/(1Mhz) * 2^20 = 1.04 seconds approx */
-    volatile std::uint32_t  delta          = 0;       /* Declaration of delta for comparision */
+    constexpr std::uint32_t cycles_timeout = 0xFFFFFF; /* Timeout of 1/(80Mhz) * 2^24 = 0.2 seconds approx */
+    volatile std::uint32_t  delta          = 0;        /* Declaration of delta for comparision */
 
     /* Disable LPIT channel 3 for loading */
     LPIT0->CLRTEN |= LPIT_CLRTEN_CLR_T_EN_3(1);
@@ -798,6 +798,9 @@ public:
     /* FlexCAN ISR for frame reception */
     static void S32K_libuavcan_ISR(std::uint8_t instance)
     {
+        /* Perform the ISR atomically */
+        DISABLE_INTERRUPTS()
+        
         /* Initialize variable for finding which MB received */
         std::uint8_t MB_index = 0;
 
@@ -864,24 +867,31 @@ public:
                 std::uint64_t timestamp_HW =
                     FlexCAN[instance]->RAMn[MB_index * S32K_InterfaceGroup::MB_Size_Words] & 0xFFFF;
 
+                /* Harvest the peripheral's current timestamp */
                 std::uint64_t FlexCAN_timestamp = FlexCAN[instance]->TIMER;
-                 
-                std::uint64_t overflow_offset;
-                 
-                FlexCAN_timestamp < timestamp_HW ? overflow_offset = 1 : overflow_offset = 0;
-
-
-                /* Compute source clock delta and unlocks the MB */
-                std::uint64_t source_delta = FlexCAN_timestamp- timestamp_HW;
-
+                
                 /* Get monotonic time */
                 std::uint64_t monotone =
                     static_cast<std::uint64_t>((static_cast<std::uint64_t>(0xFFFFFFFF - LPIT0->TMR[1].CVAL) << 32) |
                                                (0xFFFFFFFF - LPIT0->TMR[0].CVAL));
-
+                 
+                /* Source time resolving */
+                std::uint64_t overflow_offset;
+                
+                if (FlexCAN_timestamp > timestamp_HW)
+                {
+                    std::uint64_t source_delta = FlexCAN_timestamp - timestamp_HW;
+                    overflow_offset = 0;
+                }
+                else
+                {   
+                    /* In this case, an overflow occurred and the offset is substracted from the overflows count */
+                    std::uint64_t source_delta = timestamp_HW - FlexCAN_timestamp;
+                    overflow_offset = 1;
+                }
+                
                 /* Timestamp resolving, first, compute delta of target */
                 std::uint64_t target_delta = monotone - target_prevoius;
-
 
                 /* Resolve the number of overflows that occurred in the source clock, (counts from 0 to 0xFFFF so period
                  * is 0x10000) */
@@ -915,6 +925,9 @@ public:
             /* Clear MB interrupt flag (write 1 to clear)*/
             FlexCAN[instance]->IFLAG1 |= (1 << MB_index);
         }
+        
+        /* Enable interrupts back */
+        ENABLE_INTERRUPTS()
     }
 };
 
