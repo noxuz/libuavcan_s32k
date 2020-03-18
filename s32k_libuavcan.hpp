@@ -119,7 +119,7 @@ constexpr static std::uint8_t PCC_FlexCAN_Index[] = {36u, 37u, 43u};
  * @param  std::uint64_t Source clock read from the FlexCAN's peripheral timer.
  * @return time::Monotonic 64-bit timestamp resolved from 16-bit Flexcan's timer samples.
  */
-libuavcan::time::Monotonic resolve_Timestamp(std::uint32_t timestamp_HW)
+libuavcan::time::Monotonic resolve_Timestamp(std::uint32_t timestamp_HW, std::uint8_t instance)
 {
     /* Harvest the peripheral's current timestamp */
     std::uint64_t FlexCAN_timestamp = FlexCAN[instance]->TIMER;
@@ -130,10 +130,11 @@ libuavcan::time::Monotonic resolve_Timestamp(std::uint32_t timestamp_HW)
 
     /* Source delta time resolving */
     std::uint64_t overflow_offset;
+    std::uint64_t source_delta;
 
     if (FlexCAN_timestamp > timestamp_HW)
     {
-        std::uint64_t source_delta = FlexCAN_timestamp - timestamp_HW;
+        source_delta = FlexCAN_timestamp - timestamp_HW;
         overflow_offset            = 0;
     }
     else
@@ -141,7 +142,7 @@ libuavcan::time::Monotonic resolve_Timestamp(std::uint32_t timestamp_HW)
         /* In this case, an overflow occurred between both source clock readings, the delta is computed in
            reverse order for maintaining unsignedned type use, but and offset of 1 is substracted from the
            overflows count computed next */
-        std::uint64_t source_delta = timestamp_HW - FlexCAN_timestamp;
+        source_delta = timestamp_HW - FlexCAN_timestamp;
         overflow_offset            = 1;
     }
 
@@ -159,6 +160,8 @@ libuavcan::time::Monotonic resolve_Timestamp(std::uint32_t timestamp_HW)
 
     /* Update the previous target clock source reading */
     target_clock_previous = monotone;
+    
+    return resolved_timestamp_ISR;
 }
 
 /**
@@ -914,7 +917,7 @@ public:
                     FlexCAN[instance]->RAMn[MB_index * S32K_InterfaceGroup::MB_Size_Words] & 0xFFFF;
 
                 /* Instantiate monotonic object form a resolved timestamp */
-                time::Monotonic timestamp_ISR = resolve_Timestamp(timestamp_HW);
+                time::Monotonic timestamp_ISR = resolve_Timestamp(timestamp_HW,instance);
 
                 /* Create Frame object with constructor */
                 CAN::Frame<CAN::TypeFD::MaxFrameSizeBytes> FrameISR(id_ISR,
