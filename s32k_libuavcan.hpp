@@ -118,11 +118,11 @@ constexpr static std::uint8_t PCC_FlexCAN_Index[] = {36u, 37u, 43u};
 
 /**
  * Helper function for resolving the timestamp of a received frame. Based on Pyuavcan's SourceTimeResolver class.
- * @param  std::uint64_t timestamp_HW Source clock read from the FlexCAN's peripheral timer.
+ * @param  std::uint64_t frame_timestamp Source clock read from the FlexCAN's peripheral timer.
  * @param  std::uint8_t instance The interface instance number used by the ISR
  * @return time::Monotonic 64-bit timestamp resolved from 16-bit Flexcan's timer samples.
  */
-libuavcan::time::Monotonic resolve_Timestamp(std::uint32_t timestamp_HW, std::uint8_t instance)
+libuavcan::time::Monotonic resolve_Timestamp(std::uint32_t frame_timestamp, std::uint8_t instance)
 {
     /* Harvest the peripheral's current timestamp */
     std::uint64_t FlexCAN_timestamp = S32K::FlexCAN[instance]->TIMER;
@@ -135,9 +135,9 @@ libuavcan::time::Monotonic resolve_Timestamp(std::uint32_t timestamp_HW, std::ui
     std::uint64_t overflow_offset;
     std::uint64_t source_delta;
 
-    if (FlexCAN_timestamp > timestamp_HW)
+    if (FlexCAN_timestamp > frame_timestamp)
     {
-        source_delta    = FlexCAN_timestamp - timestamp_HW;
+        source_delta    = FlexCAN_timestamp - frame_timestamp;
         overflow_offset = 0;
     }
     else
@@ -145,7 +145,7 @@ libuavcan::time::Monotonic resolve_Timestamp(std::uint32_t timestamp_HW, std::ui
         /* In this case, an overflow occurred between both source clock readings, the delta is computed in
            reverse order for maintaining unsignedned type use, but and offset of 1 is substracted from the
            overflows count computed next */
-        source_delta    = timestamp_HW - FlexCAN_timestamp;
+        source_delta    = frame_timestamp - FlexCAN_timestamp;
         overflow_offset = 1;
     }
 
@@ -919,11 +919,11 @@ public:
                 }
 
                 /* Harvest the frame's 16-bit hardware timestamp */
-                std::uint64_t timestamp_HW =
+                std::uint64_t MB_timestamp =
                     S32K::FlexCAN[instance]->RAMn[MB_index * S32K_InterfaceGroup::MB_Size_Words] & 0xFFFF;
 
                 /* Instantiate monotonic object form a resolved timestamp */
-                time::Monotonic timestamp_ISR = S32K::resolve_Timestamp(timestamp_HW, instance);
+                time::Monotonic timestamp_ISR = S32K::resolve_Timestamp(MB_timestamp, instance);
 
                 /* Create Frame object with constructor */
                 CAN::Frame<CAN::TypeFD::MaxFrameSizeBytes> FrameISR(id_ISR,
