@@ -99,7 +99,8 @@ std::deque<CAN::Frame<CAN::TypeFD::MaxFrameSizeBytes>,
 /* Counter for the number of discarded messages due to the RX buffer being full */
 std::uint32_t g_S32K_discarded_frames_count[S32K_CANFD_Count] = {DISCARD_COUNT_ARRAY};
 
-std::uint64_t target_prevoius = 0;
+/* Initialize the target clock variable for timestamp resolving */
+std::uint64_t target_clock_previous = 0;
 
 /* Number of filters supported by a single FlexCAN instance */
 constexpr static std::uint8_t S32K_Filter_Count = 5u;
@@ -112,6 +113,54 @@ constexpr static CAN_Type* FlexCAN[] = CAN_BASE_PTRS;
 
 /* Lookup table for FlexCAN indices in PCC register */
 constexpr static std::uint8_t PCC_FlexCAN_Index[] = {36u, 37u, 43u};
+
+/**
+ * Helper function for resolving the timestamp of a received frame. Based on Pyuavcan's SourceTimeResolver class. 
+ * @param  std::uint64_t Source clock read from the FlexCAN's peripheral timer.
+ * @return time::Monotonic 64-bit timestamp resolved from 16-bit Flexcan's timer samples.
+ */
+ libuavcan::time::Monotonic resolve_Timestamp(std::uint32_t timestamp_HW)
+ {
+    /* Harvest the peripheral's current timestamp */
+    std::uint64_t FlexCAN_timestamp = FlexCAN[instance]->TIMER;
+    
+    /* Get the target clock source */
+    std::uint64_t monotone =
+        static_cast<std::uint64_t>((static_cast<std::uint64_t>(0xFFFFFFFF - LPIT0->TMR[1].CVAL) << 32) |
+                                   (0xFFFFFFFF - LPIT0->TMR[0].CVAL));
+                                   
+    /* Source delta time resolving */
+    std::uint64_t overflow_offset;
+    
+    if (FlexCAN_timestamp > timestamp_HW)
+    {
+        std::uint64_t source_delta = FlexCAN_timestamp - timestamp_HW;
+        overflow_offset = 0;
+    }
+    else
+    {   
+    /* In this case, an overflow occurred between both source clock readings, the delta is computed in 
+       reverse order for maintaining unsignedned type use, but and offset of 1 is substracted from the 
+       overflows count computed next */
+        std::uint64_t source_delta = timestamp_HW - FlexCAN_timestamp;
+        overflow_offset = 1;
+    }
+    
+    /* Target clock resolving, first, compute delta of target */
+    std::uint64_t target_delta = monotone - target_clock_previous;
+
+    /* Resolve the number of overflows that occurred in the source clock, (counts from 0 to 0xFFFF so period
+     * is 0x10000) */
+    std::uint64_t overflows_count = (target_delta - source_delta) / 0x10000;
+        
+    std::uint64_t resolved_timestamp_ISR = (overflows_count - overflow_offset) * 0x10000;
+
+    /* Resolve the absolute timestamp and divide by 80 due the 80Mhz clock source to microseconds */
+    resolved_timestamp_ISR = (resolved_timestamp_ISR + source_delta + target_clock_previous)/80;
+
+    /* Update the previous target clock source reading */
+    target_clock_previous = monotone;
+ }
 
 /**
  * Helper function for block polling a bit flag until its set with a timeout of 0.2 seconds using a LPIT timer
@@ -867,45 +916,8 @@ public:
                 std::uint64_t timestamp_HW =
                     FlexCAN[instance]->RAMn[MB_index * S32K_InterfaceGroup::MB_Size_Words] & 0xFFFF;
 
-                /* Harvest the peripheral's current timestamp */
-                std::uint64_t FlexCAN_timestamp = FlexCAN[instance]->TIMER;
-                
-                /* Get monotonic time */
-                std::uint64_t monotone =
-                    static_cast<std::uint64_t>((static_cast<std::uint64_t>(0xFFFFFFFF - LPIT0->TMR[1].CVAL) << 32) |
-                                               (0xFFFFFFFF - LPIT0->TMR[0].CVAL));
-                 
-                /* Source time resolving */
-                std::uint64_t overflow_offset;
-                
-                if (FlexCAN_timestamp > timestamp_HW)
-                {
-                    std::uint64_t source_delta = FlexCAN_timestamp - timestamp_HW;
-                    overflow_offset = 0;
-                }
-                else
-                {   
-                    /* In this case, an overflow occurred and the offset is substracted from the overflows count */
-                    std::uint64_t source_delta = timestamp_HW - FlexCAN_timestamp;
-                    overflow_offset = 1;
-                }
-                
-                /* Timestamp resolving, first, compute delta of target */
-                std::uint64_t target_delta = monotone - target_prevoius;
-
-                /* Resolve the number of overflows that occurred in the source clock, (counts from 0 to 0xFFFF so period
-                 * is 0x10000) */
-                std::uint64_t overflows_count = (target_delta - source_delta) / 0x10000;
-                    
-                std::uint64_t resolved_timestamp_ISR = (overflows_count - overflow_offset) * 0x10000;
-
-                resolved_timestamp_ISR = (resolved_timestamp_ISR + source_delta + target_prevoius)/80;
-
-                /* Update the previous */
-                target_prevoius = monotone;
-
-                /* Instantiate monotonic object form the resolved timestamp */
-                time::Monotonic timestamp_ISR = time::Monotonic::fromMicrosecond(resolved_timestamp_ISR);
+                /* Instantiate monotonic object form a resolved timestamp */
+                time::Monotonic timestamp_ISR = resolve_Timestamp(timestamp_HW);
 
                 /* Create Frame object with constructor */
                 CAN::Frame<CAN::TypeFD::MaxFrameSizeBytes> FrameISR(id_ISR,
