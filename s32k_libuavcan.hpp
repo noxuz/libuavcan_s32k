@@ -118,7 +118,8 @@ constexpr static std::uint8_t PCC_FlexCAN_Index[] = {36u, 37u, 43u};
 
 /**
  * Helper function for resolving the timestamp of a received frame. Based on Pyuavcan's SourceTimeResolver class.
- * @param  std::uint64_t Source clock read from the FlexCAN's peripheral timer.
+ * @param  std::uint64_t timestamp_HW Source clock read from the FlexCAN's peripheral timer.
+ * @param  std::uint8_t instance The interface instance number used by the ISR
  * @return time::Monotonic 64-bit timestamp resolved from 16-bit Flexcan's timer samples.
  */
 libuavcan::time::Monotonic resolve_Timestamp(std::uint32_t timestamp_HW, std::uint8_t instance)
