@@ -17,7 +17,7 @@
  * used in NXP's UAVCAN node board, set to 0 when using other boards  */
 #define UAVCAN_NODE_BOARD_USED 1
 
-/* Include desired target S32K14x registers and features header files,
+/* Include desired target S32K14x memory map header file,
  * defaults to S32K146 from NXP's UAVCAN node board */
 #include "S32K146.h"
 
@@ -93,17 +93,6 @@ constexpr static std::uint_fast8_t CANFD_Count = TARGET_S32K_CANFD_COUNT;
 /* Frame capacity for the intermediate ISR buffer, each frame adds 80 bytes of required .bss memory */
 constexpr static std::size_t Frame_Capacity = 40u;
 
-/* Intermediate buffer for ISR reception with static memory pool for each instance */
-std::deque<CAN::Frame<CAN::TypeFD::MaxFrameSizeBytes>,
-           platform::memory::PoolAllocator<Frame_Capacity, sizeof(CAN::Frame<CAN::TypeFD::MaxFrameSizeBytes>)>>
-    g_frame_ISRbuffer[CANFD_Count];
-
-/* Counter for the number of discarded messages due to the RX buffer being full */
-std::uint32_t g_S32K_discarded_frames_count[S32K::CANFD_Count] = {DISCARD_COUNT_ARRAY};
-
-/* Initialize the target clock variable for timestamp resolving */
-std::uint64_t g_target_clock_previous = 0;
-
 /* Number of filters supported by a single FlexCAN instance */
 constexpr static std::uint8_t Filter_Count = 5u;
 
@@ -121,6 +110,17 @@ constexpr static std::uint8_t MB_Size_Words = 18u;
 
 /* Offset in words for reaching the payload of a message buffer */
 constexpr static std::uint8_t MB_Data_Offset = 2u;
+
+/* Intermediate buffer for ISR reception with static memory pool for each instance */
+static std::deque<CAN::Frame<CAN::TypeFD::MaxFrameSizeBytes>,
+                  platform::memory::PoolAllocator<Frame_Capacity, sizeof(CAN::Frame<CAN::TypeFD::MaxFrameSizeBytes>)>>
+    g_frame_ISRbuffer[CANFD_Count];
+
+/* Counter for the number of discarded messages due to the RX buffer being full */
+static std::uint32_t g_S32K_discarded_frames_count[S32K::CANFD_Count] = {DISCARD_COUNT_ARRAY};
+
+/* Initialize the target clock variable for timestamp resolving */
+static std::uint64_t g_target_clock_previous = 0;
 
 /**
  * Helper function for block polling a bit flag until its set with a timeout of 0.2 seconds using a LPIT timer
@@ -264,7 +264,157 @@ private:
         return libuavcan::Result::Success;
     }
 
+    /**
+     * Helper function for resolving the timestamp of a received frame from 16-bit overflowing timers. Based on
+     * Pyuavcan's SourceTimeResolver class.
+     * @param  frame_timestamp Source clock read from the FlexCAN's peripheral timer.
+     * @param  instance        The interface instance number used by the ISR
+     * @return time::Monotonic 64-bit timestamp resolved from 16-bit Flexcan's timer samples.
+     */
+    static libuavcan::time::Monotonic resolve_Timestamp(std::uint32_t frame_timestamp, std::uint8_t instance)
+    {
+        /* Harvest the peripheral's current timestamp */
+        std::uint64_t FlexCAN_timestamp = S32K::FlexCAN[instance]->TIMER;
+
+        /* Get the target clock source */
+        std::uint64_t target_source = static_cast<std::uint64_t>(
+            (static_cast<std::uint64_t>(0xFFFFFFFF - LPIT0->TMR[1].CVAL) << 32) | (0xFFFFFFFF - LPIT0->TMR[0].CVAL));
+
+        /* Source delta time resolving */
+        std::uint64_t overflow_offset;
+        std::uint64_t source_delta;
+
+        if (FlexCAN_timestamp > frame_timestamp)
+        {
+            source_delta    = FlexCAN_timestamp - frame_timestamp;
+            overflow_offset = 0;
+        }
+        else
+        {
+            /* In this case, an overflow occurred between both source clock readings, the delta is computed in
+               reverse order for maintaining unsignedned type use, but and offset of 1 is substracted from the
+               overflows count computed next */
+            source_delta    = frame_timestamp - FlexCAN_timestamp;
+            overflow_offset = 1;
+        }
+
+        /* Target clock resolving, first, compute delta of target */
+        std::uint64_t target_delta = target_source - S32K::g_target_clock_previous;
+
+        /* Resolve the number of overflows that occurred in the source clock, (counts from 0 to 0xFFFF so period
+         * is 0x10000) */
+        std::uint64_t overflows_count = (target_delta - source_delta) / 0x10000;
+
+        std::uint64_t resolved_timestamp_ISR = (overflows_count - overflow_offset) * 0x10000;
+
+        /* Resolve the absolute timestamp and divide by 80 due the 80Mhz clock source to microseconds */
+        resolved_timestamp_ISR = (resolved_timestamp_ISR + source_delta + S32K::g_target_clock_previous) / 80;
+
+        /* Update the previous target clock source reading */
+        S32K::g_target_clock_previous = target_source;
+
+        return libuavcan::time::Monotonic::fromMicrosecond(resolved_timestamp_ISR);
+    }
+
 public:
+    /**
+     * FlexCAN ISR for frame reception.
+     * @param instance The interface number in which the ISR will be executed, starts at 0.
+     */
+    static void S32K_libuavcan_ISR_callback(std::uint8_t instance)
+    {
+        /* Perform the ISR atomically */
+        DISABLE_INTERRUPTS()
+
+        /* Initialize variable for finding which MB received */
+        std::uint8_t MB_index = 0;
+
+        /* Check which RX MB caused the interrupt (0b1111100) mask for 2nd-6th MB */
+        switch (S32K::FlexCAN[instance]->IFLAG1 & 124)
+        {
+        case 0x4:
+            MB_index = 2;
+            break;
+        case 0x8:
+            MB_index = 3;
+            break;
+        case 0x10:
+            MB_index = 4;
+            break;
+        case 0x20:
+            MB_index = 5;
+            break;
+        case 0x40:
+            MB_index = 6;
+            break;
+        }
+
+        if (MB_index)
+        {
+            /* Receive a frame only if the buffer its under its capacity */
+            if (S32K::g_frame_ISRbuffer[instance].size() <= S32K::Frame_Capacity)
+            {
+                /* Harvest the Message buffer, read of the control and status word locks the MB */
+
+                /* Get the raw DLC from the message buffer that received a frame */
+                std::uint32_t dlc_ISR_raw =
+                    ((S32K::FlexCAN[instance]->RAMn[MB_index * S32K::MB_Size_Words]) & CAN_WMBn_CS_DLC_MASK) >>
+                    CAN_WMBn_CS_DLC_SHIFT;
+
+                /* Create CAN::FrameDLC type variable from the raw dlc */
+                CAN::FrameDLC dlc_ISR = CAN::FrameDLC(dlc_ISR_raw);
+
+                /* Convert from dlc to data length in bytes */
+                std::uint8_t payloadLength_ISR = S32K_InterfaceGroup::FrameType::dlcToLength(dlc_ISR);
+
+                /* Get the id */
+                std::uint32_t id_ISR =
+                    (S32K::FlexCAN[instance]->RAMn[MB_index * S32K::MB_Size_Words + 1]) & CAN_WMBn_ID_ID_MASK;
+
+                /* Array for harvesting the received frame's payload */
+                std::uint32_t data_ISR_word[(payloadLength_ISR >> 2) + std::min(1, (payloadLength_ISR & 0x3))];
+
+                /* Perform the harvesting of the payload, leveraging from native 32-bit transfers and since the FlexCAN
+                 * expects the data to be in big-endian order, a byte swap is required from the little-endian
+                 * transmission UAVCAN requirement */
+                for (std::uint8_t i = 0;
+                     i < (payloadLength_ISR >> 2) + std::min(1, static_cast<std::uint8_t>(payloadLength_ISR) & 0x3);
+                     i++)
+                {
+                    REV_BYTES_32(S32K::FlexCAN[instance]
+                                     ->RAMn[MB_index * S32K::MB_Size_Words + S32K::MB_Data_Offset + i],
+                                 data_ISR_word[i]);
+                }
+
+                /* Harvest the frame's 16-bit hardware timestamp */
+                std::uint64_t MB_timestamp = S32K::FlexCAN[instance]->RAMn[MB_index * S32K::MB_Size_Words] & 0xFFFF;
+
+                /* Instantiate monotonic object form a resolved timestamp */
+                time::Monotonic timestamp_ISR = resolve_Timestamp(MB_timestamp, instance);
+
+                /* Create Frame object with constructor */
+                CAN::Frame<CAN::TypeFD::MaxFrameSizeBytes> FrameISR(id_ISR,
+                                                                    reinterpret_cast<std::uint8_t*>(data_ISR_word),
+                                                                    dlc_ISR,
+                                                                    timestamp_ISR);
+
+                /* Insert the frame into the queue */
+                S32K::g_frame_ISRbuffer[instance].push_back(FrameISR);
+            }
+            else
+            {
+                /* Increment the number of discarded frames due to full RX dequeue */
+                S32K::g_S32K_discarded_frames_count[instance]++;
+            }
+
+            /* Clear MB interrupt flag (write 1 to clear)*/
+            S32K::FlexCAN[instance]->IFLAG1 |= (1 << MB_index);
+        }
+
+        /* Enable interrupts back */
+        ENABLE_INTERRUPTS()
+    }
+
     /**
      * Get the number of CAN-FD capable FlexCAN modules in current S32K14 MCU
      * @return 1-* depending of the target MCU.
@@ -523,57 +673,6 @@ class S32K_InterfaceManager : private InterfaceManager<S32K_InterfaceGroup, S32K
 private:
     /* S32K_InterfaceGroup type object member which address is returned from the next factory method */
     InterfaceGroupType S32K_InterfaceGroupObj;
-
-    /**
-     * Helper function for resolving the timestamp of a received frame. Based on Pyuavcan's SourceTimeResolver class.
-     * @param  frame_timestamp Source clock read from the FlexCAN's peripheral timer.
-     * @param  instance        The interface instance number used by the ISR
-     * @return time::Monotonic 64-bit timestamp resolved from 16-bit Flexcan's timer samples.
-     */
-    static libuavcan::time::Monotonic resolve_Timestamp(std::uint32_t frame_timestamp, std::uint8_t instance)
-    {
-        /* Harvest the peripheral's current timestamp */
-        std::uint64_t FlexCAN_timestamp = S32K::FlexCAN[instance]->TIMER;
-
-        /* Get the target clock source */
-        std::uint64_t target_source = static_cast<std::uint64_t>(
-            (static_cast<std::uint64_t>(0xFFFFFFFF - LPIT0->TMR[1].CVAL) << 32) | (0xFFFFFFFF - LPIT0->TMR[0].CVAL));
-
-        /* Source delta time resolving */
-        std::uint64_t overflow_offset;
-        std::uint64_t source_delta;
-
-        if (FlexCAN_timestamp > frame_timestamp)
-        {
-            source_delta    = FlexCAN_timestamp - frame_timestamp;
-            overflow_offset = 0;
-        }
-        else
-        {
-            /* In this case, an overflow occurred between both source clock readings, the delta is computed in
-               reverse order for maintaining unsignedned type use, but and offset of 1 is substracted from the
-               overflows count computed next */
-            source_delta    = frame_timestamp - FlexCAN_timestamp;
-            overflow_offset = 1;
-        }
-
-        /* Target clock resolving, first, compute delta of target */
-        std::uint64_t target_delta = target_source - S32K::g_target_clock_previous;
-
-        /* Resolve the number of overflows that occurred in the source clock, (counts from 0 to 0xFFFF so period
-         * is 0x10000) */
-        std::uint64_t overflows_count = (target_delta - source_delta) / 0x10000;
-
-        std::uint64_t resolved_timestamp_ISR = (overflows_count - overflow_offset) * 0x10000;
-
-        /* Resolve the absolute timestamp and divide by 80 due the 80Mhz clock source to microseconds */
-        resolved_timestamp_ISR = (resolved_timestamp_ISR + source_delta + S32K::g_target_clock_previous) / 80;
-
-        /* Update the previous target clock source reading */
-        S32K::g_target_clock_previous = target_source;
-
-        return libuavcan::time::Monotonic::fromMicrosecond(resolved_timestamp_ISR);
-    }
 
 public:
     /**
@@ -850,104 +949,6 @@ public:
      *         i.e. the number of combinations of ID and mask that each FlexCAN instance supports
      */
     virtual std::size_t getMaxFrameFilters() const override { return S32K::Filter_Count; }
-
-    /**
-     * FlexCAN ISR for frame reception
-     * @param instance The interface number in which the ISR will be executed, starts at 0.
-     */
-    static void S32K_libuavcan_ISR(std::uint8_t instance)
-    {
-        /* Perform the ISR atomically */
-        DISABLE_INTERRUPTS()
-
-        /* Initialize variable for finding which MB received */
-        std::uint8_t MB_index = 0;
-
-        /* Check which RX MB caused the interrupt (0b1111100) mask for 2nd-6th MB */
-        switch (S32K::FlexCAN[instance]->IFLAG1 & 124)
-        {
-        case 0x4:
-            MB_index = 2;
-            break;
-        case 0x8:
-            MB_index = 3;
-            break;
-        case 0x10:
-            MB_index = 4;
-            break;
-        case 0x20:
-            MB_index = 5;
-            break;
-        case 0x40:
-            MB_index = 6;
-            break;
-        }
-
-        if (MB_index)
-        {
-            /* Receive a frame only if the buffer its under its capacity */
-            if (S32K::g_frame_ISRbuffer[instance].size() <= S32K::Frame_Capacity)
-            {
-                /* Harvest the Message buffer, read of the control and status word locks the MB */
-
-                /* Get the raw DLC from the message buffer that received a frame */
-                std::uint32_t dlc_ISR_raw =
-                    ((S32K::FlexCAN[instance]->RAMn[MB_index * S32K::MB_Size_Words]) & CAN_WMBn_CS_DLC_MASK) >>
-                    CAN_WMBn_CS_DLC_SHIFT;
-
-                /* Create CAN::FrameDLC type variable from the raw dlc */
-                CAN::FrameDLC dlc_ISR = CAN::FrameDLC(dlc_ISR_raw);
-
-                /* Convert from dlc to data length in bytes */
-                std::uint8_t payloadLength_ISR = S32K_InterfaceGroup::FrameType::dlcToLength(dlc_ISR);
-
-                /* Get the id */
-                std::uint32_t id_ISR =
-                    (S32K::FlexCAN[instance]->RAMn[MB_index * S32K::MB_Size_Words + 1]) & CAN_WMBn_ID_ID_MASK;
-
-                /* Array for harvesting the received frame's payload */
-                std::uint32_t data_ISR_word[(payloadLength_ISR >> 2) + std::min(1, (payloadLength_ISR & 0x3))];
-
-                /* Perform the harvesting of the payload, leveraging from native 32-bit transfers and since the FlexCAN
-                 * expects the data to be in big-endian order, a byte swap is required from the little-endian
-                 * transmission UAVCAN requirement */
-                for (std::uint8_t i = 0;
-                     i < (payloadLength_ISR >> 2) + std::min(1, static_cast<std::uint8_t>(payloadLength_ISR) & 0x3);
-                     i++)
-                {
-                    REV_BYTES_32(S32K::FlexCAN[instance]
-                                     ->RAMn[MB_index * S32K::MB_Size_Words + S32K::MB_Data_Offset + i],
-                                 data_ISR_word[i]);
-                }
-
-                /* Harvest the frame's 16-bit hardware timestamp */
-                std::uint64_t MB_timestamp = S32K::FlexCAN[instance]->RAMn[MB_index * S32K::MB_Size_Words] & 0xFFFF;
-
-                /* Instantiate monotonic object form a resolved timestamp */
-                time::Monotonic timestamp_ISR = resolve_Timestamp(MB_timestamp, instance);
-
-                /* Create Frame object with constructor */
-                CAN::Frame<CAN::TypeFD::MaxFrameSizeBytes> FrameISR(id_ISR,
-                                                                    reinterpret_cast<std::uint8_t*>(data_ISR_word),
-                                                                    dlc_ISR,
-                                                                    timestamp_ISR);
-
-                /* Insert the frame into the queue */
-                S32K::g_frame_ISRbuffer[instance].push_back(FrameISR);
-            }
-            else
-            {
-                /* Increment the number of discarded frames due to full RX dequeue */
-                S32K::g_S32K_discarded_frames_count[instance]++;
-            }
-
-            /* Clear MB interrupt flag (write 1 to clear)*/
-            S32K::FlexCAN[instance]->IFLAG1 |= (1 << MB_index);
-        }
-
-        /* Enable interrupts back */
-        ENABLE_INTERRUPTS()
-    }
 };
 
 } /* END namespace media */
@@ -959,7 +960,7 @@ extern "C"
     void CAN0_ORed_0_15_MB_IRQHandler()
     {
         /* Callback the static RX Interrupt Service Routine */
-        libuavcan::media::S32K_InterfaceManager::S32K_libuavcan_ISR(0u);
+        libuavcan::media::S32K_InterfaceGroup::S32K_libuavcan_ISR_callback(0u);
     }
 
 #if defined(MCU_S32K146) || defined(MCU_S32K148)
@@ -967,7 +968,7 @@ extern "C"
     void CAN1_ORed_0_15_MB_IRQHandler()
     {
         /* Callback the static RX Interrupt Service Routine */
-        libuavcan::media::S32K_InterfaceManager::S32K_libuavcan_ISR(1u);
+        libuavcan::media::S32K_InterfaceGroup::S32K_libuavcan_ISR_callback(1u);
     }
 #endif
 
@@ -976,7 +977,7 @@ extern "C"
     void CAN2_ORed_0_15_MB_IRQHandler()
     {
         /* Callback the static RX Interrupt Service Routine */
-        libuavcan::media::S32K_InterfaceManager::S32K_libuavcan_ISR(2u);
+        libuavcan::media::S32K_InterfaceGroup::S32K_libuavcan_ISR_callback(2u);
     }
 #endif
 }
