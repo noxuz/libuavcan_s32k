@@ -134,7 +134,7 @@ libuavcan::time::Monotonic resolve_Timestamp(std::uint32_t frame_timestamp, std:
     std::uint64_t FlexCAN_timestamp = S32K::FlexCAN[instance]->TIMER;
 
     /* Get the target clock source */
-    std::uint64_t monotone = static_cast<std::uint64_t>(
+    std::uint64_t target_source = static_cast<std::uint64_t>(
         (static_cast<std::uint64_t>(0xFFFFFFFF - LPIT0->TMR[1].CVAL) << 32) | (0xFFFFFFFF - LPIT0->TMR[0].CVAL));
 
     /* Source delta time resolving */
