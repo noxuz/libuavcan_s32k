@@ -123,57 +123,6 @@ constexpr static std::uint8_t MB_Size_Words = 18u;
 constexpr static std::uint8_t MB_Data_Offset = 2u;
 
 /**
- * Helper function for resolving the timestamp of a received frame. Based on Pyuavcan's SourceTimeResolver class.
- * @param  frame_timestamp Source clock read from the FlexCAN's peripheral timer.
- * @param  instance        The interface instance number used by the ISR
- * @return time::Monotonic 64-bit timestamp resolved from 16-bit Flexcan's timer samples.
- */
-libuavcan::time::Monotonic resolve_Timestamp(std::uint32_t frame_timestamp, std::uint8_t instance)
-{
-    /* Harvest the peripheral's current timestamp */
-    std::uint64_t FlexCAN_timestamp = S32K::FlexCAN[instance]->TIMER;
-
-    /* Get the target clock source */
-    std::uint64_t target_source = static_cast<std::uint64_t>(
-        (static_cast<std::uint64_t>(0xFFFFFFFF - LPIT0->TMR[1].CVAL) << 32) | (0xFFFFFFFF - LPIT0->TMR[0].CVAL));
-
-    /* Source delta time resolving */
-    std::uint64_t overflow_offset;
-    std::uint64_t source_delta;
-
-    if (FlexCAN_timestamp > frame_timestamp)
-    {
-        source_delta    = FlexCAN_timestamp - frame_timestamp;
-        overflow_offset = 0;
-    }
-    else
-    {
-        /* In this case, an overflow occurred between both source clock readings, the delta is computed in
-           reverse order for maintaining unsignedned type use, but and offset of 1 is substracted from the
-           overflows count computed next */
-        source_delta    = frame_timestamp - FlexCAN_timestamp;
-        overflow_offset = 1;
-    }
-
-    /* Target clock resolving, first, compute delta of target */
-    std::uint64_t target_delta = target_source - S32K::g_target_clock_previous;
-
-    /* Resolve the number of overflows that occurred in the source clock, (counts from 0 to 0xFFFF so period
-     * is 0x10000) */
-    std::uint64_t overflows_count = (target_delta - source_delta) / 0x10000;
-
-    std::uint64_t resolved_timestamp_ISR = (overflows_count - overflow_offset) * 0x10000;
-
-    /* Resolve the absolute timestamp and divide by 80 due the 80Mhz clock source to microseconds */
-    resolved_timestamp_ISR = (resolved_timestamp_ISR + source_delta + S32K::g_target_clock_previous) / 80;
-
-    /* Update the previous target clock source reading */
-    S32K::g_target_clock_previous = target_source;
-
-    return libuavcan::time::Monotonic::fromMicrosecond(resolved_timestamp_ISR);
-}
-
-/**
  * Helper function for block polling a bit flag until its set with a timeout of 0.2 seconds using a LPIT timer
  *
  * @param  flagRegister Register where the flag is located.
@@ -575,6 +524,57 @@ private:
     /* S32K_InterfaceGroup type object member which address is returned from the next factory method */
     InterfaceGroupType S32K_InterfaceGroupObj;
 
+    /**
+     * Helper function for resolving the timestamp of a received frame. Based on Pyuavcan's SourceTimeResolver class.
+     * @param  frame_timestamp Source clock read from the FlexCAN's peripheral timer.
+     * @param  instance        The interface instance number used by the ISR
+     * @return time::Monotonic 64-bit timestamp resolved from 16-bit Flexcan's timer samples.
+     */
+    static libuavcan::time::Monotonic resolve_Timestamp(std::uint32_t frame_timestamp, std::uint8_t instance)
+    {
+        /* Harvest the peripheral's current timestamp */
+        std::uint64_t FlexCAN_timestamp = S32K::FlexCAN[instance]->TIMER;
+
+        /* Get the target clock source */
+        std::uint64_t target_source = static_cast<std::uint64_t>(
+            (static_cast<std::uint64_t>(0xFFFFFFFF - LPIT0->TMR[1].CVAL) << 32) | (0xFFFFFFFF - LPIT0->TMR[0].CVAL));
+
+        /* Source delta time resolving */
+        std::uint64_t overflow_offset;
+        std::uint64_t source_delta;
+
+        if (FlexCAN_timestamp > frame_timestamp)
+        {
+            source_delta    = FlexCAN_timestamp - frame_timestamp;
+            overflow_offset = 0;
+        }
+        else
+        {
+            /* In this case, an overflow occurred between both source clock readings, the delta is computed in
+               reverse order for maintaining unsignedned type use, but and offset of 1 is substracted from the
+               overflows count computed next */
+            source_delta    = frame_timestamp - FlexCAN_timestamp;
+            overflow_offset = 1;
+        }
+
+        /* Target clock resolving, first, compute delta of target */
+        std::uint64_t target_delta = target_source - S32K::g_target_clock_previous;
+
+        /* Resolve the number of overflows that occurred in the source clock, (counts from 0 to 0xFFFF so period
+         * is 0x10000) */
+        std::uint64_t overflows_count = (target_delta - source_delta) / 0x10000;
+
+        std::uint64_t resolved_timestamp_ISR = (overflows_count - overflow_offset) * 0x10000;
+
+        /* Resolve the absolute timestamp and divide by 80 due the 80Mhz clock source to microseconds */
+        resolved_timestamp_ISR = (resolved_timestamp_ISR + source_delta + S32K::g_target_clock_previous) / 80;
+
+        /* Update the previous target clock source reading */
+        S32K::g_target_clock_previous = target_source;
+
+        return libuavcan::time::Monotonic::fromMicrosecond(resolved_timestamp_ISR);
+    }
+
 public:
     /**
      * Initializes the peripherals needed for libuavcan driver layer in current MCU
@@ -924,7 +924,7 @@ public:
                 std::uint64_t MB_timestamp = S32K::FlexCAN[instance]->RAMn[MB_index * S32K::MB_Size_Words] & 0xFFFF;
 
                 /* Instantiate monotonic object form a resolved timestamp */
-                time::Monotonic timestamp_ISR = S32K::resolve_Timestamp(MB_timestamp, instance);
+                time::Monotonic timestamp_ISR = resolve_Timestamp(MB_timestamp, instance);
 
                 /* Create Frame object with constructor */
                 CAN::Frame<CAN::TypeFD::MaxFrameSizeBytes> FrameISR(id_ISR,
