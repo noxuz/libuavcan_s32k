@@ -67,7 +67,8 @@
 /* CMSIS Core for __REV macro use */
 #include "s32_core_cm4.h"
 
-/* Preprocessor conditionals for deducing the number of CANFD FlexCAN instances in target MCU */
+/* Preprocessor conditionals for deducing the number of CANFD FlexCAN instances in target MCU,
+   this macro is defined inside the desired memory map "S32K14x.h" included header file */
 #if defined(MCU_S32K142) || defined(MCU_S32K144)
 #    define TARGET_S32K_CANFD_COUNT (1u)
 #    define DISCARD_COUNT_ARRAY 0
@@ -119,11 +120,10 @@ static std::deque<CAN::Frame<CAN::TypeFD::MaxFrameSizeBytes>,
 /* Counter for the number of discarded messages due to the RX buffer being full */
 static std::uint32_t g_S32K_discarded_frames_count[S32K::CANFD_Count] = {DISCARD_COUNT_ARRAY};
 
-/* Initialize the target clock variable for timestamp resolving */
-static std::uint64_t g_target_clock_previous = 0;
-
 /**
- * Helper function for block polling a bit flag until its set with a timeout of 0.2 seconds using a LPIT timer
+ * Helper function for block polling a bit flag until its set with a timeout of 0.2 seconds using a LPIT timer,
+ * the argument list and usage reassembles the classic block polling while loop, and instead of using a third
+ * argument to decide if it'ss a timed block for a clear or set, the two flavors of the function are provided.
  *
  * @param  flagRegister Register where the flag is located.
  * @param  flagMask     Mask to AND'nd with the register for isolating the flag.
@@ -265,61 +265,45 @@ private:
     }
 
     /**
-     * Helper function for resolving the timestamp of a received frame from 16-bit overflowing timers. Based on
-     * Pyuavcan's SourceTimeResolver class.
+     * Helper function for resolving the timestamp of a received frame from FlexCAN'S 16-bit overflowing timer. Based
+     * on Pyuavcan's SourceTimeResolver class from which the terms source and target are used.
+     * Note: A maximum of 820 microseconds is allowed for the reception ISR to reach this function starting from
+     *       a successful frame reception. The computation relies in that no more than a full period from the 16-bit
+     *       timestamping timer running at 80Mhz have passed, this could occur in deadlocks or priority inversion
+     * scenarios since 820 uSecs constitute a significant amount of cycles, if this happens, timestamps would stop being
+     * monotonic.
      * @param  frame_timestamp Source clock read from the FlexCAN's peripheral timer.
      * @param  instance        The interface instance number used by the ISR
      * @return time::Monotonic 64-bit timestamp resolved from 16-bit Flexcan's timer samples.
      */
-    static libuavcan::time::Monotonic resolve_Timestamp(std::uint32_t frame_timestamp, std::uint8_t instance)
+    static libuavcan::time::Monotonic resolve_Timestamp(std::uint64_t frame_timestamp, std::uint8_t instance)
     {
-        /* Harvest the peripheral's current timestamp */
+        /* Harvest the peripheral's current timestamp, this is the 16-bit overflowing source clock */
         std::uint64_t FlexCAN_timestamp = S32K::FlexCAN[instance]->TIMER;
 
-        /* Get the target clock source */
+        /* Get an non-overflowing 64-bit timestamp, this is the target clock source */
         std::uint64_t target_source = static_cast<std::uint64_t>(
             (static_cast<std::uint64_t>(0xFFFFFFFF - LPIT0->TMR[1].CVAL) << 32) | (0xFFFFFFFF - LPIT0->TMR[0].CVAL));
 
-        /* Source delta time resolving */
-        std::uint64_t overflow_offset;
-        std::uint64_t source_delta;
+        /* Compute the delta of time that occurred in the source clock */
+        std::uint64_t source_delta = FlexCAN_timestamp > frame_timestamp ? FlexCAN_timestamp - frame_timestamp
+                                                                         : frame_timestamp - FlexCAN_timestamp;
 
-        if (FlexCAN_timestamp > frame_timestamp)
-        {
-            source_delta    = FlexCAN_timestamp - frame_timestamp;
-            overflow_offset = 0;
-        }
-        else
-        {
-            /* In this case, an overflow occurred between both source clock readings, the delta is computed in
-               reverse order for maintaining unsignedned type use, but and offset of 1 is substracted from the
-               overflows count computed next */
-            source_delta    = frame_timestamp - FlexCAN_timestamp;
-            overflow_offset = 1;
-        }
+        /* Resolve the received frame's absolute timestamp and divide by 80 due the 80Mhz clock source
+         * of both the source and target timers for converting them into the desired microseconds resolution */
+        std::uint64_t resolved_timestamp_ISR = (target_source - source_delta) / 80;
 
-        /* Target clock resolving, first, compute delta of target */
-        std::uint64_t target_delta = target_source - S32K::g_target_clock_previous;
-
-        /* Resolve the number of overflows that occurred in the source clock, (counts from 0 to 0xFFFF so period
-         * is 0x10000) */
-        std::uint64_t overflows_count = (target_delta - source_delta) / 0x10000;
-
-        std::uint64_t resolved_timestamp_ISR = (overflows_count - overflow_offset) * 0x10000;
-
-        /* Resolve the absolute timestamp and divide by 80 due the 80Mhz clock source to microseconds */
-        resolved_timestamp_ISR = (resolved_timestamp_ISR + source_delta + S32K::g_target_clock_previous) / 80;
-
-        /* Update the previous target clock source reading */
-        S32K::g_target_clock_previous = target_source;
-
+        /* Instantiate the required Monotonic object from the resolved timestamp */
         return libuavcan::time::Monotonic::fromMicrosecond(resolved_timestamp_ISR);
     }
 
 public:
     /**
-     * FlexCAN ISR for frame reception.
-     * @param instance The interface number in which the ISR will be executed, starts at 0.
+     * FlexCAN ISR for frame reception, implements a walkaround to the S32K1 FlexCAN's lack of a RX FIFO neither a DMA
+     * triggering mechanism for CAN-FD frames in hardware, with g++ in debug build this function completes in 17204
+     * cycles that equal 215 microseconds running at 80Mhz as configured in this driver.
+     * @param instance The FlexCAN peripheral instance number in which the ISR will be executed, starts at 0.
+     * differing form this library's interface indexes that start at 1.
      */
     static void S32K_libuavcan_ISR_callback(std::uint8_t instance)
     {
@@ -333,22 +317,23 @@ public:
         switch (S32K::FlexCAN[instance]->IFLAG1 & 124)
         {
         case 0x4:
-            MB_index = 2;
+            MB_index = 2u; /* Case for 2nd MB */
             break;
         case 0x8:
-            MB_index = 3;
+            MB_index = 3u; /* Case for 3th MB */
             break;
         case 0x10:
-            MB_index = 4;
+            MB_index = 4u; /* Case for 4th MB */
             break;
         case 0x20:
-            MB_index = 5;
+            MB_index = 5u; /* Case for 5th MB */
             break;
         case 0x40:
-            MB_index = 6;
+            MB_index = 6u; /* Case for 6th MB */
             break;
         }
 
+        /* Validate that the index didn't get stuck at 0, this would be invalid since MB's 0th and 1st are TX */
         if (MB_index)
         {
             /* Receive a frame only if the buffer its under its capacity */
@@ -954,31 +939,18 @@ public:
 } /* END namespace media */
 } /* END namespace libuavcan */
 
+/* Interrupt requests handled by hardware in each frame reception installed by the linker
+   in function of the number of instances available in the target MCU */
 extern "C"
 {
-    /* ISR for FlexCAN0 successful reception */
-    void CAN0_ORed_0_15_MB_IRQHandler()
-    {
-        /* Callback the static RX Interrupt Service Routine */
-        libuavcan::media::S32K_InterfaceGroup::S32K_libuavcan_ISR_callback(0u);
-    }
+    void CAN0_ORed_0_15_MB_IRQHandler() { libuavcan::media::S32K_InterfaceGroup::S32K_libuavcan_ISR_callback(0u); }
 
 #if defined(MCU_S32K146) || defined(MCU_S32K148)
-    /* ISR for FlexCAN1 successful reception) */
-    void CAN1_ORed_0_15_MB_IRQHandler()
-    {
-        /* Callback the static RX Interrupt Service Routine */
-        libuavcan::media::S32K_InterfaceGroup::S32K_libuavcan_ISR_callback(1u);
-    }
+    void CAN1_ORed_0_15_MB_IRQHandler() { libuavcan::media::S32K_InterfaceGroup::S32K_libuavcan_ISR_callback(1u); }
 #endif
 
 #if defined(MCU_S32K148)
-    /* ISR for FlexCAN2 successful reception */
-    void CAN2_ORed_0_15_MB_IRQHandler()
-    {
-        /* Callback the static RX Interrupt Service Routine */
-        libuavcan::media::S32K_InterfaceGroup::S32K_libuavcan_ISR_callback(2u);
-    }
+    void CAN2_ORed_0_15_MB_IRQHandler() { libuavcan::media::S32K_InterfaceGroup::S32K_libuavcan_ISR_callback(2u); }
 #endif
 }
 
