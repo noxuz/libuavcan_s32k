@@ -260,8 +260,15 @@ private:
         S32K::FlexCAN[iface_index]->RAMn[TX_MB_index * S32K::MB_Size_Words] =
             CAN_RAMn_DATA_BYTE_1(0x20) | CAN_WMBn_CS_DLC(frame.getDLC()) | CAN_RAMn_DATA_BYTE_0(0xCC);
 
+        /* After a succesful transmission the interrupt flag of the corresponding message buffer is set, poll with
+         * timeout for it */
+        libuavcan::Result Status = S32K::flagPollTimeout_Set(S32K::FlexCAN[iface_index]->IFLAG1, 1 << TX_MB_index);
+
+        /* Clear the flag previously polled (W1C register) */
+        S32K::FlexCAN[iface_index]->IFLAG1 |= 1 << TX_MB_index;
+
         /* Return successful transmission request status */
-        return libuavcan::Result::Success;
+        return Status;
     }
 
     /**
@@ -430,24 +437,19 @@ public:
             Status = libuavcan::Result::BadArgument;
         }
 
-        /* Variable for searching for an available message buffer for transmission */
-        std::uint8_t mb_index = 0;
-
         /* Poll the Inactive Message Buffer and Valid Priority Status flags before checking for free MB's */
         if ((S32K::FlexCAN[interface_index - 1]->ESR2 & CAN_ESR2_IMB_MASK) &&
             (S32K::FlexCAN[interface_index - 1]->ESR2 & CAN_ESR2_VPS_MASK))
         {
             /* Look for the lowest number free MB */
-            mb_index = (S32K::FlexCAN[interface_index - 1]->ESR2 & CAN_ESR2_LPTM_MASK) >> CAN_ESR2_LPTM_SHIFT;
-
-            /* Clear any pending interrupt flag from the found MB */
-            S32K::FlexCAN[interface_index - 1]->IFLAG1 |= 1 << mb_index;
+            std::uint8_t mb_index =
+                (S32K::FlexCAN[interface_index - 1]->ESR2 & CAN_ESR2_LPTM_MASK) >> CAN_ESR2_LPTM_SHIFT;
 
             /* Proceed with the tranmission */
             Status = messageBuffer_Transmit(interface_index - 1, mb_index, frames[0]);
 
             /* Argument assignment to 1 Frame transmitted successfully */
-            out_frames_written = 1u;
+            out_frames_written = isSuccess(Status) ? TxFramesLen : 0;
         }
 
         /* Return status code */
@@ -487,7 +489,7 @@ public:
                 /* Pop the front element of the queue buffer */
                 S32K::g_frame_ISRbuffer[interface_index - 1].pop_front();
 
-                /* Default minimal RX number of frames read */
+                /* Default RX number of frames read at once by this implementation is 1 */
                 out_frames_read = RxFramesLen;
 
                 /* If read is successful, status is success */
