@@ -59,7 +59,7 @@
 namespace libuavcan
 {
 namespace media
-{
+{   
 /**
  * @namespace S32K
  * Microcontroller-specific constants, variables and non-mutating helper functions for the use of the FlexCAN peripheral
