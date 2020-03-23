@@ -2,7 +2,7 @@
 ### libuavcan V1 bare-metal driver layer for the NXP S32K14x family of automotive-grade microcontrollers, featuring CAN-FD running at 4 Mb/s and 1 Mb/s in data and nominal phases, respectively.
 
 An example project of it's usage for custom applications, and file dependencies used, is available in this **[Demo.](https://github.com/noxuz/libuavcan_demo)**
-
+![alt text](https://s3-prod-europe.autonews.com/s3fs-public/NXP_logo%20web.jpg) 
 | Peripheral used by this driver | Resources utilized |
 | ------------- | ------------- |
 | LPIT  | Channels 0,1 and 2, 3rd channel is available |
@@ -36,8 +36,8 @@ An example project of it's usage for custom applications, and file dependencies 
 | CAN1 TX | PTA13 |
 | CAN2 RX | PTB12 |
 | CAN2 TX | PTB13 |
-| PTE10 | CAN0 transceiver's STB (UAVCAN node board only) |
-| PTE11 | CAN1 transceiver's STB (UAVCAN node board only) |
+| PTE10 | CAN0 transceiver's STB<br/> (UAVCAN node board only) |
+| PTE11 | CAN1 transceiver's STB<br/> (UAVCAN node board only) |
 
 *S32K146 and S32K148 although having multiple CANFD instances their evb's have
  only one transceiver, the other instances's  digital signals are set out to pin headers.*
