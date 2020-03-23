@@ -14,14 +14,14 @@
 #define S32K_LIBUAVCAN_HPP_INCLUDED
 
 /**
- * Macro for additional configuration needed when using a TJA1044 transceiver, which is used 
- * in NXP's RD_DRONE UAVCAN node board, set to 0 when using EVB's or other boards. 
+ * Macro for additional configuration needed when using a TJA1044 transceiver, which is used
+ * in NXP's RD_DRONE UAVCAN node board, set to 0 when using EVB's or other boards.
  */
 #define UAVCAN_NODE_BOARD_USED 1
 
-/** 
+/**
  * Include desired target S32K14x memory map header file,
- * defaults to S32K146 from NXP's UAVCAN node board 
+ * defaults to S32K146 from NXP's UAVCAN node board
  */
 #include "S32K146.h"
 
@@ -38,7 +38,7 @@
 
 /**
  * Preprocessor conditionals for deducing the number of CANFD FlexCAN instances in target MCU,
- * this macro is defined inside the desired memory map "S32K14x.h" included header file 
+ * this macro is defined inside the desired memory map "S32K14x.h" included header file
  */
 #if defined(MCU_S32K142) || defined(MCU_S32K144)
 #    define TARGET_S32K_CANFD_COUNT (1u)
@@ -90,6 +90,9 @@ constexpr static std::uint8_t MB_Size_Words = 18u;
 /** Offset in words for reaching the payload of a message buffer */
 constexpr static std::uint8_t MB_Data_Offset = 2u;
 
+/** Number of cycles to wait for the timed polls, corresponding to a timeout of 1/(80Mhz) * 2^24 = 0.2 seconds approx */
+constexpr static std::uint32_t cycles_timeout = 0xFFFFFF;
+
 /** Frame's reception FIFO as a dequeue with libuavcan's static memory pool, one for each available interface */
 static std::deque<CAN::Frame<CAN::TypeFD::MaxFrameSizeBytes>,
                   platform::memory::PoolAllocator<Frame_Capacity, sizeof(CAN::Frame<CAN::TypeFD::MaxFrameSizeBytes>)>>
@@ -98,9 +101,9 @@ static std::deque<CAN::Frame<CAN::TypeFD::MaxFrameSizeBytes>,
 /** Counter for the number of discarded messages due to the RX FIFO being full */
 static std::uint32_t g_discarded_frames_count[CANFD_Count] = {DISCARD_COUNT_ARRAY};
 
-/** 
+/**
  * Enumeration for converting from a bit number to an index, used for some registers where a bit flag for a nth
- * message buffer is represented as a bit left shifted nth times. e.g. 2nd MB is 0b100 = 4 = (1 << 2)  
+ * message buffer is represented as a bit left shifted nth times. e.g. 2nd MB is 0b100 = 4 = (1 << 2)
  */
 enum MB_bit_to_index : std::uint8_t
 {
@@ -125,17 +128,17 @@ enum MB_bit_to_index : std::uint8_t
  */
 libuavcan::Result flagPollTimeout_Set(volatile std::uint32_t& flagRegister, std::uint32_t flag_Mask)
 {
-    constexpr std::uint32_t cycles_timeout = 0xFFFFFF; /* Timeout of 1/(80Mhz) * 2^24 = 0.2 seconds approx */
-    volatile std::uint32_t  delta          = 0;        /* Initialization of delta for comparision */
+    /* Initialization of delta for timeout measurement */
+    volatile std::uint32_t delta = 0;
 
-    /* Disable LPIT channel 3 for loading */
-    LPIT0->CLRTEN |= LPIT_CLRTEN_CLR_T_EN_3(1);
+    /* Disable LPIT channel 2 for loading */
+    LPIT0->CLRTEN |= LPIT_CLRTEN_CLR_T_EN_2(1);
 
     /* Load LPIT with its maximum value */
-    LPIT0->TMR[3].TVAL = LPIT_TMR_CVAL_TMR_CUR_VAL_MASK;
+    LPIT0->TMR[2].TVAL = LPIT_TMR_CVAL_TMR_CUR_VAL_MASK;
 
-    /* Enable LPIT channel 3 for timeout start */
-    LPIT0->SETTEN |= LPIT_SETTEN_SET_T_EN_3(1);
+    /* Enable LPIT channel 2 for timeout start */
+    LPIT0->SETTEN |= LPIT_SETTEN_SET_T_EN_2(1);
 
     /* Start of timed block */
     while (delta < cycles_timeout)
@@ -147,7 +150,7 @@ libuavcan::Result flagPollTimeout_Set(volatile std::uint32_t& flagRegister, std:
         }
 
         /* Get current value of delta */
-        delta = LPIT_TMR_CVAL_TMR_CUR_VAL_MASK - (LPIT0->TMR[3].CVAL);
+        delta = LPIT_TMR_CVAL_TMR_CUR_VAL_MASK - (LPIT0->TMR[2].CVAL);
     }
 
     /* If this section is reached, means timeout ocurred and return error status is returned */
@@ -164,17 +167,17 @@ libuavcan::Result flagPollTimeout_Set(volatile std::uint32_t& flagRegister, std:
  */
 libuavcan::Result flagPollTimeout_Clear(volatile std::uint32_t& flagRegister, std::uint32_t flag_Mask)
 {
-    constexpr std::uint32_t cycles_timeout = 0xFFFFFF; /* Timeout of 1/(80Mhz) * 2^24 = 0.2 seconds approx */
-    volatile std::uint32_t  delta          = 0;        /* Initialization of delta for comparision */
+    /* Initialization of delta for timeout measurement */
+    volatile std::uint32_t delta = 0;
 
-    /* Disable LPIT channel 3 for loading */
-    LPIT0->CLRTEN |= LPIT_CLRTEN_CLR_T_EN_3(1);
+    /* Disable LPIT channel 2 for loading */
+    LPIT0->CLRTEN |= LPIT_CLRTEN_CLR_T_EN_2(1);
 
     /* Load LPIT with its maximum value */
-    LPIT0->TMR[3].TVAL = LPIT_TMR_CVAL_TMR_CUR_VAL_MASK;
+    LPIT0->TMR[2].TVAL = LPIT_TMR_CVAL_TMR_CUR_VAL_MASK;
 
-    /* Enable LPIT channel 3 for timeout start */
-    LPIT0->SETTEN |= LPIT_SETTEN_SET_T_EN_3(1);
+    /* Enable LPIT channel 2 for timeout start */
+    LPIT0->SETTEN |= LPIT_SETTEN_SET_T_EN_2(1);
 
     /* Start of timed block */
     while (delta < cycles_timeout)
@@ -186,7 +189,7 @@ libuavcan::Result flagPollTimeout_Clear(volatile std::uint32_t& flagRegister, st
         }
 
         /* Get current value of delta */
-        delta = LPIT_TMR_CVAL_TMR_CUR_VAL_MASK - (LPIT0->TMR[3].CVAL);
+        delta = LPIT_TMR_CVAL_TMR_CUR_VAL_MASK - (LPIT0->TMR[2].CVAL);
     }
 
     /* If this section is reached, means timeout ocurred and return error status is returned */
@@ -300,9 +303,9 @@ private:
 public:
     /**
      * FlexCAN ISR for frame reception, implements a walkaround to the S32K1 FlexCAN's lack of a RX FIFO neither a DMA
-     * triggering mechanism for CAN-FD frames in hardware,
+     * triggering mechanism for CAN-FD frames in hardware.
      * @param instance The FlexCAN peripheral instance number in which the ISR will be executed, starts at 0.
-     * differing form this library's interface indexes that start at 1.
+     *                 differing form this library's interface indexes that start at 1.
      */
     static void __attribute__((interrupt("IRQ"))) S32K_libuavcan_ISR_handler(std::uint8_t instance)
     {
@@ -724,7 +727,7 @@ public:
         /* Select 32-bit periodic Timer for both chained channels and timeouts timer (default)  */
         LPIT0->TMR[0].TCTRL |= LPIT_TMR_TCTRL_MODE(0);
         LPIT0->TMR[1].TCTRL |= LPIT_TMR_TCTRL_MODE(0);
-        LPIT0->TMR[3].TCTRL |= LPIT_TMR_TCTRL_MODE(0);
+        LPIT0->TMR[2].TCTRL |= LPIT_TMR_TCTRL_MODE(0);
 
         /* Select chain mode for channel 1, this becomes the most significant 32 bits */
         LPIT0->TMR[1].TCTRL |= LPIT_TMR_TCTRL_CHAIN(1);
@@ -933,9 +936,9 @@ public:
 }  // END namespace media
 }  // END namespace libuavcan
 
-/** 
+/**
  * Interrupt requests handled by hardware in each frame reception installed by the linker
- * in function of the number of instances available in the target MCU 
+ * in function of the number of instances available in the target MCU
  */
 extern "C"
 {
