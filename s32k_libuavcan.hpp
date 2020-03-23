@@ -954,11 +954,11 @@ public:
     virtual std::size_t getMaxFrameFilters() const override { return S32K::Filter_Count; }
 };
 
-} /* END namespace media */
-} /* END namespace libuavcan */
+} // END namespace media 
+} // END namespace libuavcan 
 
-/* Interrupt requests handled by hardware in each frame reception installed by the linker
-   in function of the number of instances available in the target MCU */
+/** Interrupt requests handled by hardware in each frame reception, installed by the linker
+    in function of the number of instances available in the target MCU */
 extern "C"
 {
     void CAN0_ORed_0_15_MB_IRQHandler() { libuavcan::media::S32K_InterfaceGroup::S32K_libuavcan_ISR_handler(0u); }
@@ -972,4 +972,4 @@ extern "C"
 #endif
 }
 
-#endif
+#endif // S32K_LIBUAVCAN_HPP_INCLUDED
