@@ -86,39 +86,56 @@ namespace libuavcan
 {
 namespace media
 {
+/**
+ * @namespace S32K
+ * Microcontroller-specific constants, variables and non-mutating helper functions for the use of the FlexCAN peripheral
+ */
 namespace S32K
 {
-/* Number of capable CANFD FlexCAN instances, defined in constructor, defaults to 0 */
+/** Number of capable CANFD FlexCAN instances, defined in constructor, defaults to 0 */
 constexpr static std::uint_fast8_t CANFD_Count = TARGET_S32K_CANFD_COUNT;
 
-/* Frame capacity for the intermediate ISR buffer, each frame adds 80 bytes of required .bss memory */
+/** Frame capacity for the intermediate ISR buffer, each frame adds 80 bytes of required .bss memory */
 constexpr static std::size_t Frame_Capacity = 40u;
 
-/* Number of filters supported by a single FlexCAN instance */
+/** Number of filters supported by a single FlexCAN instance */
 constexpr static std::uint8_t Filter_Count = 5u;
 
-/* Lookup table for NVIC IRQ numbers for each FlexCAN instance */
+/** Lookup table for NVIC IRQ numbers for each FlexCAN instance */
 constexpr static std::uint32_t FlexCAN_NVIC_Indices[][2u] = {{2u, 0x20000}, {2u, 0x1000000}, {2u, 0x80000000}};
 
-/* Array of FlexCAN instances for dereferencing from */
+/** Array of FlexCAN instances for dereferencing from */
 constexpr static CAN_Type* FlexCAN[] = CAN_BASE_PTRS;
 
-/* Lookup table for FlexCAN indices in PCC register */
+/** Lookup table for FlexCAN indices in PCC register */
 constexpr static std::uint8_t PCC_FlexCAN_Index[] = {36u, 37u, 43u};
 
-/* Size in words (4 bytes) of the offset between message buffers */
+/** Size in words (4 bytes) of the offset between message buffers */
 constexpr static std::uint8_t MB_Size_Words = 18u;
 
-/* Offset in words for reaching the payload of a message buffer */
+/** Offset in words for reaching the payload of a message buffer */
 constexpr static std::uint8_t MB_Data_Offset = 2u;
 
-/* Intermediate buffer for ISR reception with static memory pool for each instance */
+/** Intermediate buffer for ISR reception with static memory pool for each instance */
 static std::deque<CAN::Frame<CAN::TypeFD::MaxFrameSizeBytes>,
                   platform::memory::PoolAllocator<Frame_Capacity, sizeof(CAN::Frame<CAN::TypeFD::MaxFrameSizeBytes>)>>
     g_frame_ISRbuffer[CANFD_Count];
 
-/* Counter for the number of discarded messages due to the RX buffer being full */
-static std::uint32_t g_S32K_discarded_frames_count[S32K::CANFD_Count] = {DISCARD_COUNT_ARRAY};
+/** Counter for the number of discarded messages due to the RX buffer being full */
+static std::uint32_t g_discarded_frames_count[CANFD_Count] = {DISCARD_COUNT_ARRAY};
+
+/** Enumeration for converting from a bit number to an index, used for some registers where a bit flag for a nth
+ *  message buffer is represented as a bit left shifted nth times. e.g. 2nd MB is 0b100 = 4 = (1 << 2)  */
+enum MB_bit_to_index : std::uint8_t
+{
+    MessageBuffer0 = 0x1,  /**< Number representing the bit for the zeroth MB (1 << 2) */
+    MessageBuffer1 = 0x2,  /**< Number for the bit of the first  MB (1 << 3) */
+    MessageBuffer2 = 0x4,  /**< Number for the bit of the second MB (1 << 2) */
+    MessageBuffer3 = 0x8,  /**< Number for the bit of the third  MB (1 << 3) */
+    MessageBuffer4 = 0x10, /**< Number for the bit of the fourth MB (1 << 4) */
+    MessageBuffer5 = 0x20, /**< Number for the bit of the fifth  MB (1 << 5) */
+    MessageBuffer6 = 0x40, /**< Number for the bit of the sixth  MB (1 << 6) */
+};
 
 /**
  * Helper function for block polling a bit flag until its set with a timeout of 0.2 seconds using a LPIT timer,
@@ -322,19 +339,19 @@ public:
         /* Check which RX MB caused the interrupt (0b1111100) mask for 2nd-6th MB */
         switch (S32K::FlexCAN[instance]->IFLAG1 & 124)
         {
-        case 0x4:
+        case S32K::MessageBuffer2:
             MB_index = 2u; /* Case for 2nd MB */
             break;
-        case 0x8:
+        case S32K::MessageBuffer3:
             MB_index = 3u; /* Case for 3th MB */
             break;
-        case 0x10:
+        case S32K::MessageBuffer4:
             MB_index = 4u; /* Case for 4th MB */
             break;
-        case 0x20:
+        case S32K::MessageBuffer5:
             MB_index = 5u; /* Case for 5th MB */
             break;
-        case 0x40:
+        case S32K::MessageBuffer6:
             MB_index = 6u; /* Case for 6th MB */
             break;
         }
@@ -395,7 +412,7 @@ public:
             else
             {
                 /* Increment the number of discarded frames due to full RX dequeue */
-                S32K::g_S32K_discarded_frames_count[instance]++;
+                S32K::g_discarded_frames_count[instance]++;
             }
 
             /* Clear MB interrupt flag (write 1 to clear)*/
