@@ -1,5 +1,5 @@
 # S32K_libuavcan
-Libuavcan V1 bare-metal driver layer for the NXP S32K14x family of automotive-grade microcontrollers featuring CAN-FD running at 4 Mb/s and 1 Mb/s in data and nominal phases, respectively.
+### Libuavcan V1 bare-metal driver layer for the NXP S32K14x family of automotive-grade microcontrollers featuring CAN-FD running at 4 Mb/s and 1 Mb/s in data and nominal phases, respectively.
 
 An example project of it's usage for custom applications, and file dependencies used, are available in this **[Demo.](https://github.com/noxuz/libuavcan_demo)**
 
@@ -23,6 +23,7 @@ An example project of it's usage for custom applications, and file dependencies 
 
 *Asynchronous dividers not mentioned are left unset and SCG registers are locked after initial setup.*
 
+
 | Peripheral's functional clock  | Source and frequency |
 | ------------- | ------------- |
 | LPIT  | SPLLDIV2 @ 80Mhz  |
@@ -43,4 +44,5 @@ An example project of it's usage for custom applications, and file dependencies 
  only one transceiver, the other instances's  digital signals are set out to pin headers.*
 
  ![alt text](https://s3-prod-europe.autonews.com/s3fs-public/NXP_logo%20web.jpg)
- **For further details refer the S32K1xx reference manual [here.](https://www.nxp.com/webapp/Download?colCode=S32K1XXRM)**
+ **Copyright (c) 2020, NXP. All rights reserved.
+ For further details refer the S32K1xx reference manual [here.](https://www.nxp.com/webapp/Download?colCode=S32K1XXRM)**
