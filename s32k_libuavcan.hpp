@@ -270,8 +270,8 @@ private:
      * Note: A maximum of 820 microseconds is allowed for the reception ISR to reach this function starting from
      *       a successful frame reception. The computation relies in that no more than a full period from the 16-bit
      *       timestamping timer running at 80Mhz have passed, this could occur in deadlocks or priority inversion
-     * scenarios since 820 uSecs constitute a significant amount of cycles, if this happens, timestamps would stop being
-     * monotonic.
+     *       scenarios since 820 uSecs constitute a significant amount of cycles, if this happens, timestamps would stop
+     *       being monotonic.
      * @param  frame_timestamp Source clock read from the FlexCAN's peripheral timer.
      * @param  instance        The interface instance number used by the ISR
      * @return time::Monotonic 64-bit timestamp resolved from 16-bit Flexcan's timer samples.
@@ -300,12 +300,11 @@ private:
 public:
     /**
      * FlexCAN ISR for frame reception, implements a walkaround to the S32K1 FlexCAN's lack of a RX FIFO neither a DMA
-     * triggering mechanism for CAN-FD frames in hardware, with g++ in debug build this function completes in 17204
-     * cycles that equal 215 microseconds running at 80Mhz as configured in this driver.
+     * triggering mechanism for CAN-FD frames in hardware,
      * @param instance The FlexCAN peripheral instance number in which the ISR will be executed, starts at 0.
      * differing form this library's interface indexes that start at 1.
      */
-    static void S32K_libuavcan_ISR_callback(std::uint8_t instance)
+    static void __attribute__((interrupt("IRQ"))) S32K_libuavcan_ISR_handler(std::uint8_t instance)
     {
         /* Perform the ISR atomically */
         DISABLE_INTERRUPTS()
@@ -929,7 +928,7 @@ public:
     }
 
     /**
-     * Return the number of filters that the current UAVCAN node can support
+     * Return the number of filters that the current UAVCAN node can support.
      * @return The maximum number of frame filters available for filter groups managed by this object,
      *         i.e. the number of combinations of ID and mask that each FlexCAN instance supports
      */
@@ -943,14 +942,14 @@ public:
    in function of the number of instances available in the target MCU */
 extern "C"
 {
-    void CAN0_ORed_0_15_MB_IRQHandler() { libuavcan::media::S32K_InterfaceGroup::S32K_libuavcan_ISR_callback(0u); }
+    void CAN0_ORed_0_15_MB_IRQHandler() { libuavcan::media::S32K_InterfaceGroup::S32K_libuavcan_ISR_handler(0u); }
 
 #if defined(MCU_S32K146) || defined(MCU_S32K148)
-    void CAN1_ORed_0_15_MB_IRQHandler() { libuavcan::media::S32K_InterfaceGroup::S32K_libuavcan_ISR_callback(1u); }
+    void CAN1_ORed_0_15_MB_IRQHandler() { libuavcan::media::S32K_InterfaceGroup::S32K_libuavcan_ISR_handler(1u); }
 #endif
 
 #if defined(MCU_S32K148)
-    void CAN2_ORed_0_15_MB_IRQHandler() { libuavcan::media::S32K_InterfaceGroup::S32K_libuavcan_ISR_callback(2u); }
+    void CAN2_ORed_0_15_MB_IRQHandler() { libuavcan::media::S32K_InterfaceGroup::S32K_libuavcan_ISR_handler(2u); }
 #endif
 }
 
