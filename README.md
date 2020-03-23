@@ -24,6 +24,8 @@ An example project of it's usage for custom applications, and file dependencies 
 *Asynchronous dividers not mentioned are left unset and SCG registers are locked after initial setup.*
 
 
+
+
 | Peripheral's functional clock  | Source and frequency |
 | ------------- | ------------- |
 | LPIT  | SPLLDIV2 @ 80Mhz  |
@@ -45,6 +47,6 @@ An example project of it's usage for custom applications, and file dependencies 
 
  **For further details refer the S32K1xx reference manual [here.](https://www.nxp.com/webapp/Download?colCode=S32K1XXRM)**
  ![alt text](https://s3-prod-europe.autonews.com/s3fs-public/NXP_logo%20web.jpg)
- ####Copyright (c) 2020, NXP. All rights reserved.
+ #### Copyright (c) 2020, NXP. All rights reserved.
  
 
