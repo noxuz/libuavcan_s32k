@@ -36,16 +36,14 @@ An example project of it's usage for custom applications, and file dependencies 
 | CAN1 TX | PTA13 |
 | CAN2 RX | PTB12 |
 | CAN2 TX | PTB13 |
-| PTE10 | CAN0 transceiver's 
-STB (UAVCAN node board only) |
-| PTE11 | CAN1 transceiver's STB 
-(UAVCAN node board only) |
+| PTE10 | CAN0 transceiver's STB (UAVCAN node board only) |
+| PTE11 | CAN1 transceiver's STB (UAVCAN node board only) |
 
 *S32K146 and S32K148 although having multiple CANFD instances their evb's have
  only one transceiver, the other instances's  digital signals are set out to pin headers.*
 
  **For further details consult the S32K1xx reference manual [here.](https://www.nxp.com/webapp/Download?colCode=S32K1XXRM)**
- ![alt text](https://s3-prod-europe.autonews.com/s3fs-public/NXP_logo%20web.jpg)
+
  ### Copyright© 2020, NXP. All rights reserved.
  
 
