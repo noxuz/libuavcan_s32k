@@ -7,77 +7,51 @@
 /** @file
  * Driver for the media layer of Libuavcan v1 targeting
  * the NXP S32K14 family of automotive grade MCU's running
- * CAN-FD at 4Mbit/s data phase and 2Mbit/s in nominal phase.
+ * CAN-FD at 4Mbit/s data phase and 1Mbit/s in nominal phase.
  */
 
 #ifndef S32K_LIBUAVCAN_HPP_INCLUDED
 #define S32K_LIBUAVCAN_HPP_INCLUDED
 
-/* Macro for additional configuration needed when using TJA1044 transceiver
- * used in NXP's UAVCAN node board, set to 0 when using other boards  */
+/**
+ * Macro for additional configuration needed when using a TJA1044 transceiver, which is used 
+ * in NXP's RD_DRONE UAVCAN node board, set to 0 when using EVB's or other boards. 
+ */
 #define UAVCAN_NODE_BOARD_USED 1
 
-/* Include desired target S32K14x memory map header file,
- * defaults to S32K146 from NXP's UAVCAN node board */
+/** 
+ * Include desired target S32K14x memory map header file,
+ * defaults to S32K146 from NXP's UAVCAN node board 
+ */
 #include "S32K146.h"
 
-/*
- * Integration Note, this driver utilizes the next modules.
- * LPIT: Channels 0,1 and 3
- * FlexCAN: All message buffers from each instance.
- *          ISR priority not set, thus, it is determined by its position in the vector.
- *
- * Sets the MCU clocking in Normal RUN mode with the next prescalers, 8Mhz external crystal is assumed:
- * CORE_CLK:  80Mhz
- * SYS_CLK:   80Mhz
- * BUS_CLK:   40Mhz
- * FLASH_CLK: 26.67Mhz
- *
- * Dividers:
- * SPLLDIV2 = 1
- *
- * LPIT source = SPLLDIV2 (80Mhz)
- * FlexCAN source = SYS_CLK (80Mhz)
- *
- * Asynchronous dividers not mentioned are left unset and SCG registers are locked
- *
- * Pin configuration: (Compatible with S32K14x EVB'S)
- * CAN0 RX: PTE4
- * CAN0 TX: PTE5
- * CAN1 RX: PTA12
- * CAN1 TX: PTA13
- * CAN2 RX: PTB12
- * CAN2 TX: PTB13
- * PTE10: CAN0 transceiver STB (UAVCAN node board only)
- * PTE11: CAN1 transceiver STB (UAVCAN node board only)
- *
- * S32K146 and S32K148 although having multiple CANFD instances
- * their evb's have only one transceiver, the other instances's
- * digital signals are set out to pin headers.
- */
-
-/* libuavcan core header files */
+/** libuavcan core header files */
 #include "libuavcan/media/can.hpp"
 #include "libuavcan/media/interfaces.hpp"
 #include "libuavcan/platform/memory.hpp"
 
-/* STL queue for the intermediate ISR buffer */
+/** STL queue for the intermediate ISR buffer */
 #include <deque>
 
-/* CMSIS Core for __REV macro use */
+/** CMSIS Core for __REV macro use */
 #include "s32_core_cm4.h"
 
-/* Preprocessor conditionals for deducing the number of CANFD FlexCAN instances in target MCU,
-   this macro is defined inside the desired memory map "S32K14x.h" included header file */
+/**
+ * Preprocessor conditionals for deducing the number of CANFD FlexCAN instances in target MCU,
+ * this macro is defined inside the desired memory map "S32K14x.h" included header file 
+ */
 #if defined(MCU_S32K142) || defined(MCU_S32K144)
 #    define TARGET_S32K_CANFD_COUNT (1u)
 #    define DISCARD_COUNT_ARRAY 0
+
 #elif defined(MCU_S32K146)
 #    define TARGET_S32K_CANFD_COUNT (2u)
 #    define DISCARD_COUNT_ARRAY 0, 0
+
 #elif defined(MCU_S32K148)
 #    define TARGET_S32K_CANFD_COUNT (3u)
 #    define DISCARD_COUNT_ARRAY 0, 0, 0
+
 #else
 #    error "No NXP S32K compatible MCU header file included"
 #endif
@@ -92,10 +66,10 @@ namespace media
  */
 namespace S32K
 {
-/** Number of capable CANFD FlexCAN instances, defined in constructor, defaults to 0 */
+/** Number of capable CAN-FD FlexCAN instances */
 constexpr static std::uint_fast8_t CANFD_Count = TARGET_S32K_CANFD_COUNT;
 
-/** Frame capacity for the intermediate ISR buffer, each frame adds 80 bytes of required .bss memory */
+/** Tunable frame capacity for the ISR reception FIFO, each frame adds 80 bytes of required .bss memory */
 constexpr static std::size_t Frame_Capacity = 40u;
 
 /** Number of filters supported by a single FlexCAN instance */
@@ -104,28 +78,30 @@ constexpr static std::uint8_t Filter_Count = 5u;
 /** Lookup table for NVIC IRQ numbers for each FlexCAN instance */
 constexpr static std::uint32_t FlexCAN_NVIC_Indices[][2u] = {{2u, 0x20000}, {2u, 0x1000000}, {2u, 0x80000000}};
 
-/** Array of FlexCAN instances for dereferencing from */
+/** Array of each FlexCAN instance's addresses for dereferencing from */
 constexpr static CAN_Type* FlexCAN[] = CAN_BASE_PTRS;
 
 /** Lookup table for FlexCAN indices in PCC register */
 constexpr static std::uint8_t PCC_FlexCAN_Index[] = {36u, 37u, 43u};
 
-/** Size in words (4 bytes) of the offset between message buffers */
+/** Size in words (4 bytes) of the offset between the location of message buffers in FlexCAN's dedicated RAM */
 constexpr static std::uint8_t MB_Size_Words = 18u;
 
 /** Offset in words for reaching the payload of a message buffer */
 constexpr static std::uint8_t MB_Data_Offset = 2u;
 
-/** Intermediate buffer for ISR reception with static memory pool for each instance */
+/** Frame's reception FIFO as a dequeue with libuavcan's static memory pool, one for each available interface */
 static std::deque<CAN::Frame<CAN::TypeFD::MaxFrameSizeBytes>,
                   platform::memory::PoolAllocator<Frame_Capacity, sizeof(CAN::Frame<CAN::TypeFD::MaxFrameSizeBytes>)>>
     g_frame_ISRbuffer[CANFD_Count];
 
-/** Counter for the number of discarded messages due to the RX buffer being full */
+/** Counter for the number of discarded messages due to the RX FIFO being full */
 static std::uint32_t g_discarded_frames_count[CANFD_Count] = {DISCARD_COUNT_ARRAY};
 
-/** Enumeration for converting from a bit number to an index, used for some registers where a bit flag for a nth
- *  message buffer is represented as a bit left shifted nth times. e.g. 2nd MB is 0b100 = 4 = (1 << 2)  */
+/** 
+ * Enumeration for converting from a bit number to an index, used for some registers where a bit flag for a nth
+ * message buffer is represented as a bit left shifted nth times. e.g. 2nd MB is 0b100 = 4 = (1 << 2)  
+ */
 enum MB_bit_to_index : std::uint8_t
 {
     MessageBuffer0 = 0x1,  /**< Number representing the bit for the zeroth MB (1 << 2) */
@@ -138,7 +114,7 @@ enum MB_bit_to_index : std::uint8_t
 };
 
 /**
- * Helper function for block polling a bit flag until its set with a timeout of 0.2 seconds using a LPIT timer,
+ * Helper function for block polling a bit flag until it is set with a timeout of 0.2 seconds using a LPIT timer,
  * the argument list and usage reassembles the classic block polling while loop, and instead of using a third
  * argument to decide if it'ss a timed block for a clear or set, the two flavors of the function are provided.
  *
@@ -150,7 +126,7 @@ enum MB_bit_to_index : std::uint8_t
 libuavcan::Result flagPollTimeout_Set(volatile std::uint32_t& flagRegister, std::uint32_t flag_Mask)
 {
     constexpr std::uint32_t cycles_timeout = 0xFFFFFF; /* Timeout of 1/(80Mhz) * 2^24 = 0.2 seconds approx */
-    volatile std::uint32_t  delta          = 0;        /* Declaration of delta for comparision */
+    volatile std::uint32_t  delta          = 0;        /* Initialization of delta for comparision */
 
     /* Disable LPIT channel 3 for loading */
     LPIT0->CLRTEN |= LPIT_CLRTEN_CLR_T_EN_3(1);
@@ -179,7 +155,7 @@ libuavcan::Result flagPollTimeout_Set(volatile std::uint32_t& flagRegister, std:
 }
 
 /**
- * Helper function for block polling a bit flag until its cleared with a timeout of 0.2 seconds using a LPIT timer
+ * Helper function for block polling a bit flag until it is cleared with a timeout of 0.2 seconds using a LPIT timer
  *
  * @param  flagRegister Register where the flag is located.
  * @param  flagMask     Mask to AND'nd with the register for isolating the flag.
@@ -189,7 +165,7 @@ libuavcan::Result flagPollTimeout_Set(volatile std::uint32_t& flagRegister, std:
 libuavcan::Result flagPollTimeout_Clear(volatile std::uint32_t& flagRegister, std::uint32_t flag_Mask)
 {
     constexpr std::uint32_t cycles_timeout = 0xFFFFFF; /* Timeout of 1/(80Mhz) * 2^24 = 0.2 seconds approx */
-    volatile std::uint32_t  delta          = 0;        /* Declaration of delta for comparision */
+    volatile std::uint32_t  delta          = 0;        /* Initialization of delta for comparision */
 
     /* Disable LPIT channel 3 for loading */
     LPIT0->CLRTEN |= LPIT_CLRTEN_CLR_T_EN_3(1);
@@ -220,7 +196,7 @@ libuavcan::Result flagPollTimeout_Clear(volatile std::uint32_t& flagRegister, st
 
 /**
  * S32K CanFD driver layer InterfaceGroup
- * Class instantiation with the next template parameters:
+ * Class declaration with the next template parameters:
  *
  * FrameT = Frame: MTUBytesParam = MaxFrameSizeBytes (64 bytes)
  *                 FlagBitsCompareMask = 0x00 (default)
@@ -666,7 +642,7 @@ public:
 
 /**
  * S32K CanFD driver layer InterfaceManager
- * Class instantiation with the next template parameters
+ * Class declaration with the next template parameters
  *
  * InterfaceGroupT = S32K_InterfaceGroup (previously instantiated class)
  * InterfaceGroupPtrT = S32K_InterfaceGroup* (raw pointer)
@@ -675,7 +651,7 @@ class S32K_InterfaceManager : private InterfaceManager<S32K_InterfaceGroup, S32K
 {
 private:
     /* S32K_InterfaceGroup type object member which address is returned from the next factory method */
-    InterfaceGroupType S32K_InterfaceGroupObj;
+    InterfaceGroupType S32K_InterfaceGroupObj_;
 
 public:
     /**
@@ -904,7 +880,7 @@ public:
 #endif
 
         /* If function ended successfully, return address of object member of type S32K_InterfaceGroup */
-        out_group = &S32K_InterfaceGroupObj;
+        out_group = &S32K_InterfaceGroupObj_;
 
         /* Return code for start of S32K_InterfaceGroup */
         return Status;
@@ -954,11 +930,13 @@ public:
     virtual std::size_t getMaxFrameFilters() const override { return S32K::Filter_Count; }
 };
 
-} // END namespace media 
-} // END namespace libuavcan 
+}  // END namespace media
+}  // END namespace libuavcan
 
-/** Interrupt requests handled by hardware in each frame reception, installed by the linker
-    in function of the number of instances available in the target MCU */
+/** 
+ * Interrupt requests handled by hardware in each frame reception installed by the linker
+ * in function of the number of instances available in the target MCU 
+ */
 extern "C"
 {
     void CAN0_ORed_0_15_MB_IRQHandler() { libuavcan::media::S32K_InterfaceGroup::S32K_libuavcan_ISR_handler(0u); }
@@ -972,4 +950,4 @@ extern "C"
 #endif
 }
 
-#endif // S32K_LIBUAVCAN_HPP_INCLUDED
+#endif  // S32K_LIBUAVCAN_HPP_INCLUDED
