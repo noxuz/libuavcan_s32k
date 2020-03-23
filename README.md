@@ -1,8 +1,6 @@
 # S32K_libuavcan
 ### libuavcan V1 bare-metal driver layer for the NXP S32K14x family of automotive-grade microcontrollers, featuring CAN-FD running at 4 Mb/s and 1 Mb/s in data and nominal phases, respectively.
-![alt text](https://s3-prod-europe.autonews.com/s3fs-public/NXP_logo%20web.jpg) 
- ### Copyright© 2020, NXP. All rights reserved.
-An example project of it's usage for custom applications, and file dependencies used, is available in this **[Demo.](https://github.com/noxuz/libuavcan_demo)**
+##### An example project of it's usage for custom applications, and file dependencies used, is available in this **[Demo.](https://github.com/noxuz/libuavcan_demo)**
 
 | Peripheral used by this driver | Resources utilized |
 | ------------- | ------------- |
@@ -40,12 +38,14 @@ An example project of it's usage for custom applications, and file dependencies 
 | PTE10 | CAN0 STB* |
 | PTE11 | CAN1 STB* |
 
-* *UAVCAN RD_DRONE board-only setup, which uses the TJA1044 transceiver featuring standby (STB) mode.*
+* &astUAVCAN RD_DRONE board-only setup, which uses the TJA1044 transceiver featuring standby (STB) mode.*
 
 *S32K146 and S32K148 although having multiple CANFD instances their evb's have
  only one transceiver, the other instances's  digital signals are set out to pin headers.*
 
  **For further details consult the S32K1xx reference manual [here.](https://www.nxp.com/webapp/Download?colCode=S32K1XXRM)**
+ ![alt text](https://s3-prod-europe.autonews.com/s3fs-public/NXP_logo%20web.jpg) 
+ ### Copyright© 2020, NXP. All rights reserved.
 
 
  
