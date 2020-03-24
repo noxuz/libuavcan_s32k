@@ -1,5 +1,5 @@
-# S32K_libuavcan
-### Libuavcan V1 bare-metal media layer driver for the NXP S32K14x family of automotive-grade microcontrollers, featuring CAN-FD running at 4 Mb/s and 1 Mb/s in data and nominal phases, respectively.
+# S32K Libuavcan V1 ![alt text](https://upload.wikimedia.org/wikipedia/commons/a/a7/NXP-Logo.svg)
+### Bare-metal media layer driver for the NXP S32K14x family of automotive-grade microcontrollers, featuring CAN-FD running at 4 Mb/s and 1 Mb/s in data and nominal phases, respectively.
 An example project of it's usage for custom applications, and file dependencies used, is available in this **[Demo.](https://github.com/noxuz/libuavcan_demo)**
 
 | Peripheral used by this driver | Resources utilized |
