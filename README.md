@@ -27,16 +27,16 @@ An example project of it's usage for custom applications, and file dependencies 
 | LPIT  | SPLLDIV2 @ 80Mhz  |
 | FlexCAN  | SYS_CLK @ 80Mhz  |
 
-| Pin MUX function | Pin location |
+| Pin location | MUX |
 | ------------- | ------------- |
-| CAN0 RX | PTE4 |
-| CAN0 TX | PTE5 |
-| CAN1 RX | PTA12 |
-| CAN1 TX | PTA13 |
-| CAN2 RX | PTB12 |
-| CAN2 TX | PTB13 |
-| PTE10 | CAN0 STB° |
-| PTE11 | CAN1 STB° |
+| PTE4 | CAN0 RX | 
+| PTE5 | CAN0 TX |
+| PTA12 | CAN1 RX |
+| PTA13 | CAN1 TX |
+| PTB12 | CAN2 RX |
+| PTB13 | CAN2 TX |
+| PTE10 | CAN0 STB° (GPIO) |
+| PTE11 | CAN1 STB° (GPIO) |
 
 *° UAVCAN RD_DRONE board-only setup, which uses the TJA1044 transceiver featuring standby (STB) mode.*
 
