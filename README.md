@@ -2,6 +2,8 @@
 ### Bare-metal media layer driver for the NXP S32K14x family of automotive-grade microcontrollers, featuring CAN-FD running at 4 Mb/s and 1 Mb/s in data and nominal phases, respectively.
 An example project of it's usage for custom applications, and file dependencies used, is available in this **[Demo.](https://github.com/noxuz/libuavcan_demo)**
 
+An example project of it's usage for custom applications, and file dependencies used, is available in this **[Demo.](https://github.com/noxuz/libuavcan_demo)**
+
 | Peripheral used by this driver | Resources utilized |
 | ------------- | ------------- |
 | LPIT  | Channels 0,1 and 2, 3rd channel is available |
