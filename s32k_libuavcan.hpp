@@ -198,9 +198,8 @@ libuavcan::Result flagPollTimeout_Clear(volatile std::uint32_t& flagRegister, st
 }  // END namespace S32K
 
 /**
- * S32K CanFD driver layer InterfaceGroup
- * Class declaration with the next template parameters:
- *
+ * S32K CAN-FD driver InterfaceGroup class definition, with the next template arguments:
+ * 
  * FrameT = Frame: MTUBytesParam = MaxFrameSizeBytes (64 bytes)
  *                 FlagBitsCompareMask = 0x00 (default)
  * MaxTxFrames = 1 (default)
@@ -644,16 +643,15 @@ public:
 };
 
 /**
- * S32K CanFD driver layer InterfaceManager
- * Class declaration with the next template parameters
+ * S32K CAN-FD driver InterManager class definition, with the next template arguments:
  *
- * InterfaceGroupT = S32K_InterfaceGroup (previously instantiated class)
+ * InterfaceGroupT    = S32K_InterfaceGroup  (previously instantiated class in the file)
  * InterfaceGroupPtrT = S32K_InterfaceGroup* (raw pointer)
  */
 class S32K_InterfaceManager : private InterfaceManager<S32K_InterfaceGroup, S32K_InterfaceGroup*>
 {
 private:
-    /* S32K_InterfaceGroup type object member which address is returned from the next factory method */
+    /** S32K_InterfaceGroup type object member, which address is used in the factory method next */
     InterfaceGroupType S32K_InterfaceGroupObj_;
 
 public:
@@ -852,7 +850,7 @@ public:
             };
         }
 
-        /* Port initialization */
+        /* Clock gating and multiplexing for the pins used */
         PCC->PCCn[PCC_PORTE_INDEX] |= PCC_PCCn_CGC_MASK; /* Clock gating to PORT E */
         PORTE->PCR[4] |= PORT_PCR_MUX(5);                /* CAN0_RX at PORT E pin 4 */
         PORTE->PCR[5] |= PORT_PCR_MUX(5);                /* CAN0_TX at PORT E pin 5 */
@@ -869,7 +867,7 @@ public:
             PTE->PDDR |= 1 << 11;              /* Set direction as output */
             PTE->PCOR |= 1 << 11;              /* Set the pin LOW */
 
-            PORTE->PCR[10] |= PORT_PCR_MUX(1);
+            PORTE->PCR[10] |= PORT_PCR_MUX(1); /* Same as above */
             PTE->PDDR |= 1 << 10;
             PTE->PCOR |= 1 << 10;
         }
