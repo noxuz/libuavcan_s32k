@@ -38,9 +38,9 @@ An example project of it's usage for custom applications, and file dependencies 
 | PTE10 | CAN0 STB° |
 | PTE11 | CAN1 STB° |
 
-*°UAVCAN RD_DRONE board-only setup, which uses the TJA1044 transceiver featuring standby (STB) mode.*
+*° UAVCAN RD_DRONE board-only setup, which uses the TJA1044 transceiver featuring standby (STB) mode.*
 
-*S32K146 and S32K148 although having multiple CANFD instances their evb's have
+*S32K146 and S32K148 although having multiple CANFD instances, their evaluation boards (EVB's) have
  only one transceiver, the other instances's  digital signals are set out to pin headers.*
 
  **For further details consult the S32K1xx reference manual [here.](https://www.nxp.com/webapp/Download?colCode=S32K1XXRM)**
